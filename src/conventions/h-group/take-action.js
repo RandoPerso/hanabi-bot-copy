@@ -87,9 +87,49 @@ function take_action(state) {
 			Utils.sendCmd('action', { tableID, type, target, value });
 			return;
 		}
+		
+		
+		// All known trash and end game*, positional discard*
+		// TODO: Add logging
+		if ((trash_cards.length === hand.length) && (state.cards_left < 5)) {
+			// Find immediate playables that are not on the hypo stacks already
+			let other_playables = [];
+			for (let target = 0; target < state.numPlayers; target++) {
+				// Ignore our own hand
+				if (target === state.ourPlayerIndex) {
+					continue;
+				}
 
-		// Discard known trash
-		if (trash_cards.length > 0) {
+				const chopIndex = find_chop(hand);
+
+				// TODO: Make the loop find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
+				for (let cardIndex = state.hand[target].length - 1; cardIndex > chopIndex; cardIndex--) {
+					const card = state.hand[cardIndex];
+					const { suitIndex, rank , clued, finessed} = card;
+					
+					let playable_away = Utils.playableAway(state, suitIndex, rank);
+					let hypo_away = rank - (state.hypo_stacks[suitIndex] + 1);
+
+					if ((playable_away === 0) && (hypo_away === 0) && !clued && !finessed) {
+						other_playables.push(cardIndex);
+					}
+				}
+			}
+			if (other_playables.length !== 0) {
+				// TODO: Choose the card with the highest priority (or importance to be played)
+				// Currently chooses a random card to discard for.
+				let chosen_card_position = other_playables[Math.floor(Math.random() * other_playables.length)];
+				// Give the positional discard
+				Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chosen_card_position].order });	
+			} else {
+				// If no one has a playable, discard "chop"
+				// TODO: Fix the "chop"
+				Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[hand.length-1].order });
+			}
+		}
+		
+		// Discard known trash if hand is not all known trash
+		if ((trash_cards.length > 0) && (trash_cards.length !== hand.length)) {
 			Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: trash_cards[0].order });
 			return;
 		}
