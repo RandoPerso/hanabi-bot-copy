@@ -94,17 +94,19 @@ function take_action(state) {
 		if ((trash_cards.length === hand.length) && (state.cards_left < 5)) {
 			// Find immediate playables that are not on the hypo stacks already
 			let other_playables = [];
+			// TODO: Make the loop find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
+			const chopIndex = find_chop(hand);
 			for (let target = 0; target < state.numPlayers; target++) {
 				// Ignore our own hand
 				if (target === state.ourPlayerIndex) {
 					continue;
 				}
 
-				const chopIndex = find_chop(hand);
-
-				// TODO: Make the loop find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
-				for (let cardIndex = state.hand[target].length - 1; cardIndex > chopIndex; cardIndex--) {
-					const card = state.hand[cardIndex];
+				for (let cardIndex = 0; cardIndex < state.hands[target].length; cardIndex++) {
+					if (cardIndex == chopIndex) {
+						continue;
+					}
+					const card = state.hands[target][cardIndex];
 					const { suitIndex, rank , clued, finessed} = card;
 					
 					let playable_away = Utils.playableAway(state, suitIndex, rank);
@@ -120,11 +122,8 @@ function take_action(state) {
 				// Currently chooses a random card to discard for.
 				let chosen_card_position = other_playables[Math.floor(Math.random() * other_playables.length)];
 				// Give the positional discard
-				Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chosen_card_position].order });	
-			} else {
-				// If no one has a playable, discard "chop"
-				// TODO: Fix the "chop"
-				Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[hand.length-1].order });
+				Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chosen_card_position].order });
+				return;	
 			}
 		}
 		

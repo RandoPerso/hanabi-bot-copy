@@ -45,16 +45,19 @@ function interpret_discard(state, action, card) {
 
 	// Step 0: Ignore our own discards and bombs (positional misplay can come later).
 	if ((playerIndex !== state.ourPlayerIndex) && !action.failed) {
-		const discarded_card = Utils.objClone(card)
+		const discarded_card = Utils.objClone(card);
 		// Step 1: Recreate the hand BEFORE the discard happened.
 		// Note: Separate this into a separate function?
 		let previous_hand = Utils.objClone(state.hands[playerIndex]);
 		let discarded_slot = -1;
+		/*
 		// Remove the newly drawn card.
-		previous_hand.splice(0, 1);
+		previous_hand.shift();
+		*/
 		// Cycle through the cards, comparing the discarded card's order to find where it belongs
-		for (let card_index = 0; card_index < previous_hand.length; card_index++){
-			if (order > previous_hand[card_index].order){
+		for (let card_index = 0; card_index < previous_hand.length; card_index++) {
+			console.log("comparing " + Utils.logCard(discarded_card.suitIndex, discarded_card.rank) + " and " + Utils.logCard(previous_hand[card_index].suitIndex, previous_hand[card_index].rank));
+			if (order > previous_hand[card_index].order) {
 				previous_hand.splice(card_index, 0, discarded_card);
 				discarded_slot = card_index;
 				break;
@@ -65,24 +68,35 @@ function interpret_discard(state, action, card) {
 			discarded_slot = previous_hand.length;
 			previous_hand.push(discarded_card);
 		}
+		console.log(discarded_slot);
 		// Step 2: Compare the discarded card compared to the chop.
 		// Note: Hm, will the find_chop function return the chop the giving player sees as their chop?
+		// TODO: Make the line find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
+		// Duct Tape fix: Just check if whole hand is trash.
 		const previousChopIndex = find_chop(previous_hand);
-		if ((previousChopIndex !== previous_hand.length-1) && (discarded_card.inferred.map(c => c.toString()).join(',') !== '')){
+		let playable_hand = 0;
+		for (let card_index = 0; card_index < previous_hand.length; card_index++) {
+			const temp_card = previous_hand[card_index]
+			if (Utils.playableAway(state, temp_card.suitIndex, temp_card.rank) >= 0) {
+				playable_hand = 1;
+				break;
+			}
+		}
+		if ((previousChopIndex !== discarded_slot) && (playable_hand === 0)){
 			// Step 3: Check everyone else's hand to see if they have a playable card in that slot.
 			// TODO: Fix ambiguous positional discard.
-			let other_possible = [];
+			let possible = [];
 			for (let search_player = 0; search_player < state.numPlayers; search_player++) {
 				// Ignore our own hand and the giver's hand
 				if ((search_player === state.ourPlayerIndex) || (search_player === playerIndex)) {
 					continue;
 				}
-				let other_card = state.hands[search_player][discarded_slot]
+				let other_card = state.hands[search_player][discarded_slot];
 				let playable_away = Utils.playableAway(state, other_card.suitIndex, other_card.rank);
 				let hypo_away = other_card.rank - (state.hypo_stacks[other_card.suitIndex] + 1);
 
 				if ((playable_away === 0) && (hypo_away === 0) && !other_card.clued && !other_card.finessed) {
-					other_possible.push(search_player);
+					possible.push(search_player);
 				}
 			}
 			// Step 4: Generate all immediate playables.
@@ -91,23 +105,20 @@ function interpret_discard(state, action, card) {
 			for (let stackIndex = 0; stackIndex < number_of_stacks; stackIndex++) {
 				if (state.play_stacks[stackIndex] === state.hypo_stacks[stackIndex]) {
 					all_playable.push({suitIndex: stackIndex, rank: state.play_stacks[stackIndex]+1});
-					console.log(stackIndex)
 				}
 			}
 			// Eliminate possibilities.
-			if (other_possible.length === 0) {
-				// Step 5: Note down my card as playable.
-				state.hands[state.ourPlayerIndex][discarded_slot].inferred = Utils.objClone(state.hands[state.ourPlayerIndex][discarded_slot].possible);
-				state.hands[state.ourPlayerIndex][discarded_slot].intersect('inferred', all_playable);
-				state.hands[state.ourPlayerIndex][discarded_slot].finessed = true;
-				console.log(state.hands[state.ourPlayerIndex][discarded_slot].inferred);
-			} else {
-				// Step 5: Note down card(s) as playable.
-				for (let other_index = 0; other_index < other_possible.length; other_index++) {
-					state.hands[other_possible[other_index]][discarded_slot].inferred = Utils.objClone(state.hands[other_possible[other_index]][discarded_slot].possible);
-					state.hands[other_possible[other_index]][discarded_slot].intersect('inferred', all_playable);
-					state.hands[other_possible[other_index]][discarded_slot].finessed = true;
-				}
+			if (possible.length === 0) {
+				// If no one has a playable, mark my card as the possible discarded.
+				possible.push(state.ourPlayerIndex);
+			}
+			console.log(possible);
+			// Step 5: Note down card(s) as playable.
+			for (let other_index = 0; other_index < possible.length; other_index++) {
+				const possible_card = state.hands[possible[other_index]][discarded_slot];
+				// possible_card.inferred = Utils.objClone(state.hands[possible[other_index]][discarded_slot].possible);
+				possible_card.intersect('inferred', all_playable);
+				possible_card.finessed = true;
 			}
 		}
 	}
