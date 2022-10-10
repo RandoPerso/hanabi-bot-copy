@@ -27,6 +27,11 @@ function onClue(state, action) {
 			card.subtract('possible', new_possible);
 			card.subtract('inferred', new_possible);
 		}
+
+		// Eliminate in own hand (no one has eliminated this card yet since we just learned about it)
+		if (card.possible.length === 1) {
+			card_elim(state, card.possible[0].suitIndex, card.possible[0].rank);
+		}
 	}
 
 	state.clue_tokens--;
@@ -61,7 +66,7 @@ function onDraw(state, action) {
 
 	// Don't eliminate if we drew the card (since we don't know what it is)
 	if (playerIndex !== state.ourPlayerIndex) {
-		card_elim(state, suitIndex, rank, playerIndex);
+		card_elim(state, suitIndex, rank, [playerIndex]);
 	}
 
 	state.cards_left--;
@@ -69,8 +74,12 @@ function onDraw(state, action) {
 	// suitIndex and rank are -1 if they're your own cards
 }
 
-function card_elim(state, suitIndex, rank) {
+function card_elim(state, suitIndex, rank, ignorePlayerIndexes = []) {
 	for (let playerIndex = 0; playerIndex < state.numPlayers; playerIndex++) {
+		if (ignorePlayerIndexes.includes(playerIndex)) {
+			continue;
+		}
+
 		// Skip if already eliminated
 		if (!state.all_possible[playerIndex].some(c => c.matches(suitIndex, rank))) {
 			continue;

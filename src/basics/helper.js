@@ -51,6 +51,10 @@ function bad_touch_possiblities(state, giver, target, prev_found = []) {
 				else if (card.inferred.length === 1) {
 					({suitIndex, rank} = card.inferred[0]);
 					method = 'inference';
+					if (!card.matches(suitIndex, rank, { infer: true })) {
+						logger.warn(`tried to identify ${card.inferred[0].toString()} as bad touch when card's identity is ${card.toString()}`);
+						continue;
+					}
 				}
 				else {
 					continue;
@@ -158,9 +162,10 @@ function remove_card_from_hand(hand, order) {
 function update_hypo_stacks(state) {
 	// Fix hypo stacks if below play stacks
 	for (let i = 0; i < state.suits.length; i++) {
-		if (state.hypo_stacks[i] < state.play_stacks[i]) {
+		// TODO: Eventually, this should be added back. Need to maintain a better idea of the connections being made/broken.
+		// if (state.hypo_stacks[i] < state.play_stacks[i]) {
 			state.hypo_stacks[i] = state.play_stacks[i];
-		}
+		// }
 	}
 
 	let found_new_playable = true;
@@ -172,7 +177,7 @@ function update_hypo_stacks(state) {
 
 		for (const hand of state.hands) {
 			for (const card of hand) {
-				if (!card.clued || good_touch_elim.some(e => e.matches(card.suitIndex, card.rank))) {
+				if (!(card.clued || card.finessed || card.chop_moved) || good_touch_elim.some(e => e.matches(card.suitIndex, card.rank))) {
 					continue;
 				}
 
@@ -192,7 +197,7 @@ function update_hypo_stacks(state) {
 						}
 					}
 					return !all_trash;
-				}
+				};
 
 				if (delayed_playable(card.possible) || delayed_playable(card.inferred)) {
 					let suitIndex2, rank2;
@@ -221,7 +226,7 @@ function update_hypo_stacks(state) {
 
 					good_touch_elim.push(card);
 					found_new_playable = true;
-					logger.info(`found new playable ${card.toString()}`);
+					logger.debug(`found new playable ${card.toString()}`);
 				}
 			}
 		}

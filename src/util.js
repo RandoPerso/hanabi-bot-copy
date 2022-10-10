@@ -1,7 +1,7 @@
 const readline = require('readline');
 const { Card } = require('./basics/Card.js');
 const { logger } = require('./logger.js');
-const { ACTION, CARD_COUNT } = require('./constants.js')
+const { ACTION, CARD_COUNT } = require('./constants.js');
 
 const globals = {};
 
@@ -102,7 +102,11 @@ function handFindInfer(hand, suitIndex, rank, options = {}) {
 	});
 }
 
-function visibleFind(state, target, suitIndex, rank, options = {}) {
+function handLocked(hand) {
+	return hand.every(c => c.clued || c.chop_moved);
+}
+
+function visibleFind(state, inferringPlayerIndex, suitIndex, rank, options = {}) {
 	let found = [];
 	for (let i = 0; i < state.numPlayers; i++) {
 		if (options.ignore?.includes(i)) {
@@ -110,7 +114,7 @@ function visibleFind(state, target, suitIndex, rank, options = {}) {
 		}
 
 		const hand = state.hands[i];
-		if (i === target || i === state.ourPlayerIndex) {
+		if (i === inferringPlayerIndex || i === state.ourPlayerIndex) {
 			found = found.concat(handFindInfer(hand, suitIndex, rank, options));
 		}
 		else {
@@ -120,6 +124,7 @@ function visibleFind(state, target, suitIndex, rank, options = {}) {
 	return found;
 }
 
+// NOTE: This function uses ACTION instead of CLUE, which is not typical.
 function clueTouched(hand, clue) {
 	const { type, value } = clue;
 	if (type === ACTION.COLOUR) {
@@ -138,8 +143,8 @@ function isBasicTrash(state, suitIndex, rank) {
 	return rank <= state.play_stacks[suitIndex] || rank > state.max_ranks[suitIndex];
 }
 
-function isSaved(state, suitIndex, rank, order = -1) {
-	return visibleFind(state, state.ourPlayerIndex, suitIndex, rank).some(c => {
+function isSaved(state, inferringPlayerIndex, suitIndex, rank, order = -1, options) {
+	return visibleFind(state, inferringPlayerIndex, suitIndex, rank, options).some(c => {
 		if (order !== -1 && c.order === order) {
 			return false;
 		}
@@ -148,7 +153,7 @@ function isSaved(state, suitIndex, rank, order = -1) {
 }
 
 function isTrash(state, suitIndex, rank, order) {
-	return isBasicTrash(state, suitIndex, rank) || isSaved(state, suitIndex, rank, order);
+	return isBasicTrash(state, suitIndex, rank) || isSaved(state, state.ourPlayerIndex, suitIndex, rank, order);
 }
 
 function playableAway(state, suitIndex, rank) {
@@ -254,14 +259,19 @@ function writeNote(turn, card, tableID) {
 	}
 }
 
+function getPace(state) {
+	return state.play_stacks.reduce((acc, curr) => acc + curr) + state.cards_left + state.numPlayers - (state.suits.length * 5);
+}
+
 module.exports = {
 	CARD_COUNT,
 	globalModify, initConsole,
 	sendChat, sendCmd,
 	findOrder,
-	handFind, handFindInfer, visibleFind,
+	handFind, handFindInfer, handLocked, visibleFind,
 	clueTouched,
 	isCritical, isBasicTrash, isSaved, isTrash, playableAway,
 	objClone, objPick,
-	logCard, logHand, logClue, writeNote
+	logCard, logHand, logClue, writeNote,
+	getPace
 };

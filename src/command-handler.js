@@ -78,8 +78,11 @@ const handle = {
 	},
 	// Received at the beginning of the game, as a list of all actions that have happened so far
 	gameActionList: (data) => {
-		for (let i = 0; i < data.list.length - 1; i++) {
+		for (let i = 0; i < data.list.length - 10; i++) {
 			handle.gameAction({ action: data.list[i], tableID: data.tableID }, true);
+		}
+		for (let i = data.list.length - 10; i < data.list.length - 1; i++) {
+			handle.gameAction({ action: data.list[i], tableID: data.tableID });
 		}
 		handle.gameAction({ action: data.list.at(-1), tableID: data.tableID });
 
@@ -141,6 +144,7 @@ const handle = {
 		Object.assign(state, conventions[convention]);
 
 		state.rewind = rewind;
+		state.simulate_clue = simulate_clue;
 
 		// Save blank state
 		state.blank = Utils.objClone(state);
@@ -173,7 +177,7 @@ const handle = {
 
 let rewind_depth = 0;
 
-function rewind(state, action_index, playerIndex, order, suitIndex, rank, bomb) {
+function rewind(state, action_index, playerIndex, order, suitIndex, rank, finessed) {
 	if (rewind_depth > 2) {
 		throw new Error('attempted to rewind too many times!');
 	}
@@ -203,9 +207,11 @@ function rewind(state, action_index, playerIndex, order, suitIndex, rank, bomb) 
 	logger.warn('Rewriting order', order, 'to', Utils.logCard(suitIndex, rank));
 
 	const pivotal_action = state.actionList[action_index];
-	pivotal_action.mistake = bomb || rewind_depth > 1;
+	pivotal_action.mistake = finessed || rewind_depth > 1;
 	logger.info('pivotal action', pivotal_action);
 	handle_action(new_state, pivotal_action, true);
+
+	logger.setLevel(logger.LEVELS.ERROR);
 
 	// Redo all the following actions
 	const future = state.actionList.slice(action_index + 1);
@@ -213,9 +219,28 @@ function rewind(state, action_index, playerIndex, order, suitIndex, rank, bomb) 
 		handle_action(new_state, action, true);
 	}
 
+	logger.setLevel(logger.LEVELS.INFO);
+
 	// Overwrite state
 	Object.assign(state, new_state);
 	rewind_depth = 0;
+}
+
+function simulate_clue(state, action, options = {}) {
+	const hypo_state = Utils.objClone(state);
+
+	if (options.simulatePlayerIndex !== undefined) {
+		hypo_state.ourPlayerIndex = options.simulatePlayerIndex;
+	}
+
+	if (!options.enableLogs) {
+		logger.setLevel(logger.LEVELS.ERROR);
+	}
+
+	hypo_state.interpret_clue(hypo_state, action);
+	logger.setLevel(logger.LEVELS.INFO);
+
+	return hypo_state;
 }
 
 module.exports = { handle };

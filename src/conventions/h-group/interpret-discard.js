@@ -29,7 +29,7 @@ function apply_unknown_sarcastic(state, sarcastic, playerIndex, suitIndex, rank)
 
 	const playable = (card) => {
 		return card.inferred.every(c => Utils.playableAway(state, c.suitIndex, c.rank) === 0);
-	}
+	};
 
 	// Mistake discard or sarcastic with unknown transfer location (and not all playable)
 	if (sarcastic.length === 0 || sarcastic.some(s => !playable(s))) {
@@ -38,7 +38,7 @@ function apply_unknown_sarcastic(state, sarcastic, playerIndex, suitIndex, rank)
 }
 
 function interpret_discard(state, action, card) {
-	const { order, playerIndex, rank, suitIndex } = action;
+	const { order, playerIndex, rank, suitIndex, failed } = action;
 
 	// Check for positional discard.
 	// TODO: Find where this fits the best.
@@ -130,10 +130,10 @@ function interpret_discard(state, action, card) {
 		state.early_game = false;
 	}
 
-	// If the card doesn't match any of our inferences (and is not trash), rewind to the reasoning and adjust
-	if (!Utils.isTrash(state, card.suitIndex, card.rank, card.order) && !card.rewinded && !card.matches_inferences()) {
+	// If bombed or the card doesn't match any of our inferences (and is not trash), rewind to the reasoning and adjust
+	if (!card.rewinded && (failed || (!card.matches_inferences() && !Utils.isTrash(state, card.suitIndex, card.rank, card.order)))) {
 		logger.info('all inferences', card.inferred.map(c => c.toString()));
-		state.rewind(state, card.reasoning.pop(), playerIndex, order, suitIndex, rank, true);
+		state.rewind(state, card.reasoning.pop(), playerIndex, order, suitIndex, rank, card.finessed);
 		return;
 	}
 
@@ -142,7 +142,7 @@ function interpret_discard(state, action, card) {
 		const duplicates = Utils.visibleFind(state, playerIndex, suitIndex, rank);
 
 		// Card was bombed
-		if (action.failed) {
+		if (failed) {
 			undo_hypo_stacks(state, playerIndex, suitIndex, rank);
 		}
 		else {

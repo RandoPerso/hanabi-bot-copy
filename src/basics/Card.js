@@ -6,6 +6,7 @@
  *  order: number		the ordinal number of the card
  *  possible: [Card]	all possibilities of the card (from positive/negative information)
  *  inferred: [Card]	all inferences of the card (from conventions)
+ *  old_inferred: [Card] | undefined		only used when undoing a finesse
  *
  *  clued, newly_clued, prompted, finessed, chop_moved, reset are boolean flags
  *
@@ -104,7 +105,7 @@ class Card {
 	}
 
 	matches_inferences() {
-		return this.suitIndex === -1 || this.inferred.some(c => c.matches(this.suitIndex, this.rank));
+		return this.suitIndex === -1 || this.possible.length === 1 || this.inferred.some(c => c.matches(this.suitIndex, this.rank));
 	}
 
 	intersect(type, cards) {

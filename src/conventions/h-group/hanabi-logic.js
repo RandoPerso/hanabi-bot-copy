@@ -15,14 +15,14 @@ function find_chop(hand, options = {}) {
 
 function find_prompt(hand, suitIndex, rank, ignoreOrders = []) {
 	for (const card of hand) {
-		const { clued, newly_clued, order, inferred, possible, clues } = card;
+		const { clued, newly_clued, order, possible, clues } = card;
 		// Ignore unclued, newly clued, and known cards (also intentionally ignored cards)
 		if (!clued || newly_clued || possible.length === 1 || ignoreOrders.includes(order)) {
 			continue;
 		}
 
 		// Ignore cards that don't match the inference
-		if (!inferred.some(p => p.matches(suitIndex, rank))) {
+		if (!possible.some(p => p.matches(suitIndex, rank))) {
 			continue;
 		}
 
@@ -95,7 +95,7 @@ function find_bad_touch(state, cards) {
 			bad_touch = true;
 		}
 		// Someone else has the card finessed, clued or chop moved already
-		else if (Utils.isSaved(state, suitIndex, rank, card.order)) {
+		else if (Utils.isSaved(state, state.ourPlayerIndex, suitIndex, rank, card.order)) {
 			bad_touch = true;
 		}
 		// Cluing both copies of a card (only include < so we don't double count)
@@ -121,4 +121,21 @@ function find_bad_touch(state, cards) {
 	return bad_touch_cards;
 }
 
-module.exports = { find_chop, find_prompt, find_finesse, determine_focus, find_bad_touch };
+function stall_severity(state, giver) {
+	if (state.clue_tokens === 7 && state.turn_count !== 0) {
+		return 4;
+	}
+	if (Utils.handLocked(state.hands[giver])) {
+		return 3;
+	}
+	if (state.early_game) {
+		return 1;
+	}
+	return 0;
+}
+
+function inEndgame(state) {
+	return Utils.getPace(state) < state.numPlayers;
+}
+
+module.exports = { find_chop, find_prompt, find_finesse, determine_focus, find_bad_touch, stall_severity, inEndgame };

@@ -1,26 +1,24 @@
 const { ACTION, CLUE } = require('../../../constants.js');
 const { clue_safe } = require('./clue-safe.js');
-const { determine_focus, find_bad_touch } = require('./../hanabi-logic.js');
+const { determine_focus, find_bad_touch } = require('../hanabi-logic.js');
 const { logger } = require('../../../logger.js');
-const Basics = require('../../../basics.js');
 const Utils = require('../../../util.js');
 
 function determine_clue(state, target, target_card) {
 	logger.info('--------');
 	logger.info('determining clue to target card', target_card.toString());
-	const { suitIndex, rank } = target_card;
 	const hand = state.hands[target];
 
 	const colour_base = {
 		name: 'colour',
-		clue: { type: CLUE.COLOUR, value: suitIndex, target },
-		touch: hand.filter(c => c.suitIndex === suitIndex)
+		clue: { type: CLUE.COLOUR, value: target_card.suitIndex, target },
+		touch: hand.filter(c => c.suitIndex === target_card.suitIndex)
 	};
 
 	const rank_base = {
 		name: 'rank',
-		clue: { type: CLUE.RANK, value: rank, target },
-		touch: hand.filter(c => c.rank === rank)
+		clue: { type: CLUE.RANK, value: target_card.rank, target },
+		touch: hand.filter(c => c.rank === target_card.rank)
 	};
 
 	const [colour_result, rank_result] = [colour_base, rank_base].map(base => {
@@ -28,7 +26,6 @@ function determine_clue(state, target, target_card) {
 		const result = Object.assign({}, base);
 
 		const bad_touch_cards = find_bad_touch(state, touch.filter(c => !c.clued));		// Ignore cards that were already clued
-		result.bad_touch = bad_touch_cards.length;
 		result.focused = determine_focus(hand, touch.map(c => c.order), { beforeClue: true }).focused_card.order === target_card.order;
 
 		if (!result.focused) {
@@ -37,17 +34,14 @@ function determine_clue(state, target, target_card) {
 		}
 
 		// Simulate clue from receiver's POV to see if they have the right interpretation
-		let hypo_state = Utils.objClone(state);
-		const action = { giver: state.ourPlayerIndex, target, list: touch.map(c => c.order), clue, mistake: false };
+		const action = { giver: state.ourPlayerIndex, target, list: touch.map(c => c.order), clue, ignoreStall: true };
 
 		// Prevent outputting logs until we know that the result is correct
 		logger.collect();
 
 		logger.info('------- ENTERING HYPO --------');
 
-		hypo_state.ourPlayerIndex = target;
-		Basics.onClue(hypo_state, action);
-		hypo_state.interpret_clue(hypo_state, action, { ignoreStall: true });
+		let hypo_state = state.simulate_clue(state, action, { simulatePlayerIndex: target, enableLogs: true });
 
 		logger.info('------- EXITING HYPO --------');
 
@@ -78,9 +72,9 @@ function determine_clue(state, target, target_card) {
 
 			// Other touched cards can be bad touched/trash or match inference
 			if (card.newly_clued) {
-				return bad_touch_cards.some(c => c.order === card.order) ||							// Card is bad touched
-					card.possible.every(c => Utils.isBasicTrash(state, c.suitIndex, c.rank)) || 	// Card is known trash
-					(!card.reset && card.matches_inferences());										// Card matches interpretation
+				return bad_touch_cards.some(c => c.order === card.order) ||								// Card is bad touched
+					card.possible.every(c => Utils.isTrash(hypo_state, c.suitIndex, c.rank, card.order)) || 	// Card is known trash
+					(!card.reset && card.matches_inferences());											// Card matches interpretation
 			}
 
 			if (card.finessed) {
@@ -100,59 +94,93 @@ function determine_clue(state, target, target_card) {
 			/*logger.info(hypo_state.hands[target].map(card => {
 				if (card.reset || !card.matches_inferences()) {
 					logger.info(`card ${card.toString()} has inferences [${card.inferred.map(c => c.toString()).join(',')}] reset? ${card.reset}`);
+					logger.info(Utils.logHand(hypo_state.hands[target]));
+				}
+				if (!card.possible.every(c => Utils.isTrash(hypo_state, c.suitIndex, c.rank, card.order))) {
+					logger.info(`${card.possible.find(c => !Utils.isTrash(hypo_state, c.suitIndex, c.rank, card.order))} possibility is not trash`);
 				}
 				return bad_touch_cards.some(c => c.order === card.order) ||							// Card is bad touched
-					card.possible.every(c => Utils.isBasicTrash(state, c.suitIndex, c.rank)) || 	// Card is known trash
+					card.possible.every(c => Utils.isTrash(hypo_state, c.suitIndex, c.rank, card.order)) || 	// Card is known trash
 					(!card.reset && card.matches_inferences());										// Card matches interpretation
 			}));*/
 			return { correct: false };
 		}
 
-		// Re-simulate clue, but from our perspective so we can count the playable cards and finesses correctly
-		hypo_state = Utils.objClone(state);
-
-		logger.setLevel(logger.LEVELS.ERROR);
-		Basics.onClue(hypo_state, action);
-		hypo_state.interpret_clue(hypo_state, action, { ignoreStall: true });
-		logger.setLevel(logger.LEVELS.INFO);
-
-		// Count the number of finesses made
-		result.finesses = 0;
-		for (let i = 0; i < state.numPlayers; i++) {
-			const hand = state.hands[i];
-			for (let j = 0; j < hand.length; j++) {
-				const old_card = hand[j];
-				const hypo_card = hypo_state.hands[i][j];
-
-				if (hypo_card.finessed && !old_card.finessed) {
-					result.finesses++;
+		result.bad_touch = 0;
+		result.trash = 0;
+		for (const card of hypo_state.hands[target]) {
+			if (bad_touch_cards.some(c => c.order === card.order)) {
+				// Known trash
+				if (card.possible.every(p => Utils.isTrash(hypo_state, p.suitIndex, p.rank, card.order))) {
+					result.trash++;
+				}
+				else {
+					logger.info(`${card.toString()} is bad touch`);
+					logger.info(card.possible.map(c => c.toString()));
+					logger.info(card.possible.find(p => !Utils.isTrash(hypo_state, p.suitIndex, p.rank, card.order)).toString());
+					result.bad_touch++;
 				}
 			}
 		}
 
-		// Count the number of newly known playable cards
-		result.playables = 0;
-		logger.info(hypo_state.hypo_stacks);
-		logger.info(state.hypo_stacks);
-		for (let i = 0; i < state.suits.length; i++) {
-			result.playables += hypo_state.hypo_stacks[i] - state.hypo_stacks[i];
+		// Re-simulate clue, but from our perspective so we can count the playable cards and finesses correctly
+		hypo_state = state.simulate_clue(state, action);
+
+		result.finesses = 0;
+		result.playables = [];
+
+		// Count the number of finesses and newly known playable cards
+		logger.info(`hypo stacks before clue: ${state.hypo_stacks}`);
+		logger.info(`hypo stacks after clue:  ${hypo_state.hypo_stacks}`);
+		for (let suitIndex = 0; suitIndex < state.suits.length; suitIndex++) {
+			for (let rank = state.hypo_stacks[suitIndex] + 1; rank <= hypo_state.hypo_stacks[suitIndex]; rank++) {
+				// Find the card
+				let found = false;
+				for (let playerIndex = 0; playerIndex < state.numPlayers; playerIndex++) {
+					const hand = state.hands[playerIndex];
+
+					for (let j = 0; j < hand.length; j++) {
+						const old_card = hand[j];
+						const hypo_card = hypo_state.hands[playerIndex][j];
+
+						// TODO: This might not find the right card if it was duplicated...
+						if ((hypo_card.clued || hypo_card.finessed || hypo_card.chop_moved) &&
+							hypo_card.matches(suitIndex, rank, { infer: true })
+						) {
+							if (hypo_card.finessed && !old_card.finessed) {
+								result.finesses++;
+							}
+							result.playables.push({ playerIndex, card: old_card });
+							found = true;
+							break;
+						}
+					}
+
+					if (found) {
+						break;
+					}
+				}
+			}
 		}
 
 		return result;
 	});
 
 	const logResult = (result) => {
-		const { clue, bad_touch, interpret, elim, new_touched, finesses, playables } = result;
+		const { clue, bad_touch, trash, interpret, elim, new_touched, finesses, playables } = result;
 		return {
 			clue,
 			bad_touch,
+			trash,
 			interpret: interpret?.map(c => c.toString()),
 			elim,
 			new_touched,
 			finesses,
-			playables
+			playables: playables.map(({ playerIndex, card }) => {
+				return { player: state.playerNames[playerIndex], card: card.toString() };
+			})
 		};
-	}
+	};
 	if (colour_result.correct) {
 		logger.info('colour result', logResult(colour_result));
 	}
@@ -166,18 +194,18 @@ function determine_clue(state, target, target_card) {
 		compare_result('bool', clue_safe(state, colour_result.clue), clue_safe(state, rank_result.clue)) ||
 		compare_result('num', rank_result.bad_touch, colour_result.bad_touch) ||	// Bad touch is bad, so the options are reversed
 		compare_result('num', colour_result.finesses, rank_result.finesses) ||
-		compare_result('num', colour_result.playables, rank_result.playables) ||
+		compare_result('num', colour_result.playables.length, rank_result.playables.length) ||
 		compare_result('num', colour_result.new_touched, rank_result.new_touched) ||
 		compare_result('num', colour_result.elim, rank_result.elim) ||
 		compare_result('num', rank_result.interpret.length, colour_result.interpret.length) || 1;
 
 	if (clue_type === 1) {
 		logger.info(`selecting colour clue`);
-		return { type: ACTION.COLOUR, value: suitIndex, target, result: colour_result };
+		return { type: ACTION.COLOUR, value: target_card.suitIndex, target, result: colour_result };
 	}
 	else if (clue_type === 2) {
 		logger.info(`selecting rank clue`);
-		return { type: ACTION.RANK, value: rank, target, result: rank_result };
+		return { type: ACTION.RANK, value: target_card.rank, target, result: rank_result };
 	}
 	else {
 		// Clue doesn't work
