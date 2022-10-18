@@ -1,7 +1,7 @@
 const { Card } = require('../../basics/Card.js');
 const { find_known_trash } = require('../../basics/helper.js');
 const { find_chop } = require('./hanabi-logic.js');
-const { isTrash, playableAway, visibleFind } = require('../../basics/hanabi-util.js');
+const { isTrash, playableAway, visibleFind, isBasicTrash } = require('../../basics/hanabi-util.js');
 const { logger } = require('../../logger.js');
 const Utils = require('../../util.js');
 
@@ -57,8 +57,9 @@ function interpret_discard(state, action, card) {
 		*/
 		// Cycle through the cards, comparing the discarded card's order to find where it belongs
 		for (let card_index = 0; card_index < previous_hand.length; card_index++) {
-			console.log("comparing " + Utils.logCard(discarded_card.suitIndex, discarded_card.rank) + " and " + Utils.logCard(previous_hand[card_index].suitIndex, previous_hand[card_index].rank));
-			if (order > previous_hand[card_index].order) {
+			let previous_card = previous_hand[card_index];
+			logger.info(`comparing ${Utils.logCard(discarded_card)} (order ${discarded_card.order}) and ${Utils.logCard(previous_card)} (order ${previous_card.order})`);
+			if (order > previous_card.order) {
 				previous_hand.splice(card_index, 0, discarded_card);
 				discarded_slot = card_index;
 				break;
@@ -69,21 +70,30 @@ function interpret_discard(state, action, card) {
 			discarded_slot = previous_hand.length;
 			previous_hand.push(discarded_card);
 		}
-		console.log(discarded_slot);
-		// Step 2: Compare the discarded card compared to the chop.
-		// Note: Hm, will the find_chop function return the chop the giving player sees as their chop?
-		// TODO: Make the line find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
-		// Duct Tape fix: Just check if whole hand is trash.
-		const previousChopIndex = find_chop(previous_hand);
-		let playable_hand = 0;
-		for (let card_index = 0; card_index < previous_hand.length; card_index++) {
-			const temp_card = previous_hand[card_index]
-			if (Utils.playableAway(state, temp_card.suitIndex, temp_card.rank) >= 0) {
-				playable_hand = 1;
+		logger.info(`inserted ${Utils.logCard(discarded_card)} into slot ${discarded_slot}`);
+		// Step 2: Compare the discarded card compared to the correct card to discard.
+		// Left-most clued trash, then chop.
+		let previousChopIndex = -1;
+		for (let i = 0; i < previous_hand.length; i++) {
+			let previous_card = previous_hand[i];
+			let inference = false;
+			for (let j = 0; j < previous_card.inferred.length; j++) {
+				if (!isBasicTrash(state, previous_card.inferred[j].suitIndex, previous_card.inferred[j].rank)) {
+					inference = true;
+					break;
+				}
+			}
+			if (!inference) {
+				previousChopIndex = i;
+				logger.info(`found known trash in slot ${i} (${Utils.logCard(previous_hand[i])})`);
 				break;
 			}
 		}
-		if ((previousChopIndex !== discarded_slot) && (playable_hand === 0)){
+		if (previousChopIndex === -1) {
+			previousChopIndex = find_chop(previous_hand);
+			logger.info(`no card found, using slot ${previousChopIndex} as chop`);
+		}
+		if (previousChopIndex !== discarded_slot) {
 			// Step 3: Check everyone else's hand to see if they have a playable card in that slot.
 			// TODO: Fix ambiguous positional discard.
 			let possible = [];
@@ -93,11 +103,12 @@ function interpret_discard(state, action, card) {
 					continue;
 				}
 				let other_card = state.hands[search_player][discarded_slot];
-				let playable_away = Utils.playableAway(state, other_card.suitIndex, other_card.rank);
+				let playable_away = playableAway(state, other_card.suitIndex, other_card.rank);
 				let hypo_away = other_card.rank - (state.hypo_stacks[other_card.suitIndex] + 1);
 
 				if ((playable_away === 0) && (hypo_away === 0) && !other_card.clued && !other_card.finessed) {
 					possible.push(search_player);
+					logger.info(`found immediate playable ${Utils.logCard(other_card)} in player index ${search_player} hand`);
 				}
 			}
 			// Step 4: Generate all immediate playables.
@@ -111,9 +122,9 @@ function interpret_discard(state, action, card) {
 			// Eliminate possibilities.
 			if (possible.length === 0) {
 				// If no one has a playable, mark my card as the possible discarded.
+				logger.info(`could not find playable, assuming own hand`);
 				possible.push(state.ourPlayerIndex);
 			}
-			console.log(possible);
 			// Step 5: Note down card(s) as playable.
 			for (let other_index = 0; other_index < possible.length; other_index++) {
 				const possible_card = state.hands[possible[other_index]][discarded_slot];
