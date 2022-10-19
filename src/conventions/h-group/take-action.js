@@ -4,6 +4,7 @@ const { find_clues } = require('./clue-finder/clue-finder.js');
 const { find_stall_clue } = require('./clue-finder/stall-clues.js');
 const { find_chop, inEndgame } = require('./hanabi-logic.js');
 const { find_playables, find_known_trash } = require('../../basics/helper.js');
+const { playableAway } = require('../../basics/hanabi-util.js');
 const { logger } = require('../../logger.js');
 const Utils = require('../../util.js');
 
@@ -96,64 +97,60 @@ function take_action(state) {
 		return;
 	}
 		
-		// All known trash and end game*, positional discard*
-		// TODO: Add logging
-		if ((trash_cards.length === hand.length) && (state.cards_left < 5)) {
-			// Find immediate playables that are not on the hypo stacks already
-			let other_playables = [];
-			// TODO: Make the loop find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
-			let chopIndex = -1;
-			for (let i = 0; i < hand.length; i++) {
-				if (hand[i].clued === true) {
-					chopIndex = i;
-					logger.info(`found clued trash in slot ${i} (${Utils.logCard(previous_hand[i])})`);
-				}
-			}
-			if (chopIndex === -1) {
-				chopIndex = find_chop(hand);
-				logger.info(`no clued trash found, using slot ${previousChopIndex} as chop`);
-			}
-			for (let target = 0; target < state.numPlayers; target++) {
-				// Ignore our own hand
-				if (target === state.ourPlayerIndex) {
-					continue;
-				}
-				
-				logger.info(`checking player with player index ${target}`);
-
-				for (let cardIndex = 0; cardIndex < state.hands[target].length; cardIndex++) {
-					if (cardIndex == chopIndex) {
-						continue;
-					}
-					const card = state.hands[target][cardIndex];
-					const { suitIndex, rank , clued, finessed} = card;
-					
-					let playable_away = Utils.playableAway(state, suitIndex, rank);
-					let hypo_away = rank - (state.hypo_stacks[suitIndex] + 1);
-
-					if ((playable_away === 0) && (hypo_away === 0) && !clued && !finessed) {
-						other_playables.push(cardIndex);
-						logger.info(`found playable ${Utils.logCard(card)} (order ${card.order}) in slot ${cardIndex}`)
-					}
-				}
-			}
-			if (other_playables.length !== 0) {
-				// TODO: Choose the card with the highest priority (or importance to be played)
-				// Currently chooses a random card to discard for.
-				let chosen_card_position = other_playables[Math.floor(Math.random() * other_playables.length)];
-				// Give the positional discard
-				Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chosen_card_position].order });
-				return;	
-			} else {
-				// Expected to discard clued known trash, and findChop won't discard clued known trash
-				logger.info('no playable found, discarding known trash.');
-				Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chopIndex].order });
+	// All known trash and end game*, positional discard*
+	// TODO: Add logging
+	if ((trash_cards.length === hand.length) && (state.cards_left < 5)) {
+		// Find immediate playables that are not on the hypo stacks already
+		let other_playables = [];
+		// TODO: Make the loop find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
+		let chopIndex = -1;
+		for (let i = 0; i < hand.length; i++) {
+			if (hand[i].clued === true) {
+				chopIndex = i;
+				logger.info(`found clued trash in slot ${i}`);
 			}
 		}
+		if (chopIndex === -1) {
+			chopIndex = find_chop(hand);
+			logger.info(`no clued trash found, using slot ${previousChopIndex} as chop`);
+		}
+		for (let target = 0; target < state.numPlayers; target++) {
+			// Ignore our own hand
+			if (target === state.ourPlayerIndex) {
+				continue;
+			}
+			
+			logger.info(`checking player with player index ${target}`);
+
+			for (let cardIndex = 0; cardIndex < state.hands[target].length; cardIndex++) {
+				if (cardIndex == chopIndex) {
+					continue;
+				}
+				const card = state.hands[target][cardIndex];
+				const { suitIndex, rank , clued, finessed} = card;
+				
+				let playable_away = playableAway(state, suitIndex, rank);
+				let hypo_away = rank - (state.hypo_stacks[suitIndex] + 1);
+
+				if ((playable_away === 0) && (hypo_away === 0) && !clued && !finessed) {
+					other_playables.push(cardIndex);
+					logger.info(`found playable ${Utils.logCard(card)} (order ${card.order}) in slot ${cardIndex}`)
+				}
+			}
+		}
+		if (other_playables.length !== 0) {
+			// TODO: Choose the card with the highest priority (or importance to be played)
+			// Currently chooses a random card to discard for.
+			let chosen_card_position = other_playables[Math.floor(Math.random() * other_playables.length)];
+			// Give the positional discard
+			Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chosen_card_position].order });
+			return;	
+		}
+	}
 		
-	// Discard known trash
-	if (trash_cards.length > 0) {
-		Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: trash_cards[0].order });
+	// Discard clued known trash
+	if ((trash_cards.length > 0) && (trash_cards.some(c => c.clued))) {
+		Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: trash_cards.filter(c => c.clued)[0].order });
 		return;
 	}
 
