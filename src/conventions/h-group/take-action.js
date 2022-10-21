@@ -112,7 +112,7 @@ function take_action(state) {
 		}
 		if (chopIndex === -1) {
 			chopIndex = find_chop(hand);
-			logger.info(`no clued trash found, using slot ${previousChopIndex} as chop`);
+			logger.info(`no clued trash found, using slot ${chopIndex} as chop`);
 		}
 		for (let target = 0; target < state.numPlayers; target++) {
 			// Ignore our own hand
@@ -134,7 +134,7 @@ function take_action(state) {
 
 				if ((playable_away === 0) && (hypo_away === 0) && !clued && !finessed) {
 					other_playables.push(cardIndex);
-					logger.info(`found playable ${Utils.logCard(card)} (order ${card.order}) in slot ${cardIndex}`)
+					logger.info(`found playable ${Utils.logCard(card)} (order ${card.order}) in slot ${cardIndex}`);
 				}
 			}
 		}
