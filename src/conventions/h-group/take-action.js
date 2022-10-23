@@ -41,16 +41,12 @@ function take_action(state) {
 
 	// Remove sarcastic discards from playables
 	playable_cards = playable_cards.filter(pc => !sarcastic_discards.some(sc => sc.order === pc.order));
-	logger.info('playable cards', Utils.logHand(playable_cards));
+	logger.debug('playable cards', Utils.logHand(playable_cards));
 	logger.info('trash cards', Utils.logHand(trash_cards));
 
-	// Give a sarcastic/certain discard to someone else (if it's to us, we should play first)
 	if (sarcastic_discards.length > 0) {
-		const other_sarcastic = sarcastic_discards.find(sc => !playable_cards.some(pc => pc.matches(sc.suitIndex, sc.rank, { infer: true })));
-		if (other_sarcastic !== undefined) {
-			Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: other_sarcastic.order });
-			return;
-		}
+		Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: sarcastic_discards[0].order });
+		return;
 	}
 
 	// Get a high value play clue
@@ -145,7 +141,7 @@ function take_action(state) {
 		
 	// All known trash and end game*, positional discard*
 	// TODO: Add logging
-	if ((trash_cards.length === hand.length) && (state.cards_left < 5)) {
+	if ((trash_cards.length === hand.length) && inEndgame(state)) {
 		// Find immediate playables that are not on the hypo stacks already
 		let other_playables = [];
 		// TODO: Make the loop find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
