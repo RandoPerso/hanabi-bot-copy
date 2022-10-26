@@ -43,9 +43,9 @@ function apply_unknown_sarcastic(state, sarcastic, playerIndex, suitIndex, rank)
 function interpret_discard(state, action, card) {
 	const { order, playerIndex, rank, suitIndex, failed } = action;
 
-	const trash = find_known_trash(state, playerIndex);
 	// Early game and discard wasn't known trash or misplay, so end early game
-	if (state.early_game && !trash.some(c => c.matches(suitIndex, rank)) && !action.failed) {
+	if (state.early_game && !isTrash(state, playerIndex, suitIndex, rank, order) && !action.failed) {
+		logger.warn('ending early game from discard of', Utils.logCard(card));
 		state.early_game = false;
 	}
 
