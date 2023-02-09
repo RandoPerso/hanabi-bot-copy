@@ -52,7 +52,7 @@
  * @property {number} [value]
  * 
  * @typedef Connection
- * @property {'known' | 'playable' | 'prompt' | 'finesse'} type
+ * @property {'known' | 'playable' | 'prompt' | 'finesse' | 'positional discard'} type
  * @property {number} reacting
  * @property {Card} card
  * @property {boolean} [self]

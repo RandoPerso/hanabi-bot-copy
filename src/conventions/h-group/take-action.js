@@ -4,7 +4,7 @@ import { find_clues } from './clue-finder/clue-finder.js';
 import { find_stall_clue } from './clue-finder/stall-clues.js';
 import { find_chop, inEndgame } from './hanabi-logic.js';
 import { find_playables, find_known_trash, handLoaded } from '../../basics/helper.js';
-import { getPace } from '../../basics/hanabi-util.js';
+//// import { getPace } from '../../basics/hanabi-util.js';
 import { playableAway } from '../../basics/hanabi-util.js';
 import logger from '../../logger.js';
 import * as Utils from '../../util.js';
@@ -118,11 +118,13 @@ export function take_action(state) {
 		return;
 	}
 
+	/*
 	// Discard known trash at high pace
 	if (trash_cards.length > 0 && getPace(state) > state.numPlayers * 2) {
 		Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: trash_cards[0].order });
 		return;
 	}
+	*/
 
 	// Playable card with any priority
 	if (playable_cards.length > 0) {
@@ -171,11 +173,9 @@ export function take_action(state) {
 	}
 
 	// All known trash and end game*, positional discard*
-	// TODO: Add logging
 	if ((trash_cards.length === hand.length) && inEndgame(state)) {
 		// Find immediate playables that are not on the hypo stacks already
 		const other_playables = [];
-		// TODO: Make the loop find a more "correct" chop when all trash since clued trash has higher discard priority than unclued trash
 		let chopIndex = -1;
 		for (let i = 0; i < hand.length; i++) {
 			if (hand[i].clued === true) {
@@ -187,36 +187,61 @@ export function take_action(state) {
 			chopIndex = find_chop(hand);
 			logger.info(`no clued trash found, using slot ${chopIndex} as chop`);
 		}
+		// Generates the order that people would play their cards
+		const last_player_order = [];
+		let temp = state.ourPlayerIndex;
+		for (let i = 0; i < state.numPlayers; i++) {
+			temp--;
+			temp = temp % state.numPlayers;
+			last_player_order.push(temp);
+		}
+		logger.debug(`positional order is ${last_player_order.map(c => state.playerNames[c])}`);
 		for (let target = 0; target < state.numPlayers; target++) {
 			// Ignore our own hand
 			if (target === state.ourPlayerIndex) {
 				continue;
 			}
 
-			logger.info(`checking player with player index ${target}`);
+			logger.info(`checking ${state.playerNames[target]}'s hand`);
 
 			for (let cardIndex = 0; cardIndex < state.hands[target].length; cardIndex++) {
+				// Identifies all playables that are not on our chop.
 				if (cardIndex == chopIndex) {
 					continue;
 				}
 				const card = state.hands[target][cardIndex];
-				const { suitIndex, rank , clued, finessed} = card;
+				const { suitIndex, rank , clued, finessed} = card; // eslint-disable-line
 
 				const playable_away = playableAway(state, suitIndex, rank);
 				const hypo_away = rank - (state.hypo_stacks[suitIndex] + 1);
 
-				if ((playable_away === 0) && (hypo_away === 0) && !clued && !finessed) {
-					other_playables.push(cardIndex);
-					logger.info(`found playable ${Utils.logCard(card)} (order ${card.order}) in slot ${cardIndex}`);
+				if ((playable_away === 0) && (hypo_away === 0) && !finessed) {
+					other_playables.push([cardIndex, target, last_player_order.indexOf(target)]);
+					logger.info(`found playable ${Utils.logCard(card)} (order ${card.order}) in slot ${cardIndex + 1}`);
 				}
 			}
 		}
 		if (other_playables.length !== 0) {
 			// TODO: Choose the card with the highest priority (or importance to be played)
 			// Currently chooses a random card to discard for.
-			const chosen_card_position = other_playables[Math.floor(Math.random() * other_playables.length)];
+			const positional_playables = [];
+			const accounted_slots = [];
+			for (let i = 0; i < other_playables.length; i++) {
+				// Identifies which cards would be played from each discard.
+				const slot = other_playables[i][0];
+				if (!accounted_slots.includes(slot)) {
+					positional_playables.push(other_playables[i]);
+					accounted_slots.push(slot);
+				} else if (positional_playables[accounted_slots.indexOf(slot)][2] > other_playables[1][2]) {
+					positional_playables.splice(accounted_slots.indexOf(slot), 1, other_playables[1]);
+				}
+			}
+			const chosen_card = other_playables[Math.floor(Math.random() * other_playables.length)];
+			const card_identity = state.hands[chosen_card[1]][chosen_card[0]];
+			logger.info(`discarding for ${Utils.logCard(card_identity)} in ${state.playerNames[chosen_card[1]]}'s hand`);
+			card_identity.finessed = true;
 			// Give the positional discard
-			Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chosen_card_position].order });
+			Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chosen_card[0]].order });
 			return;
 		}
 	}

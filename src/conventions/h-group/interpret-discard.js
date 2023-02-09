@@ -3,6 +3,7 @@ import { find_chop } from './hanabi-logic.js';
 import { isTrash, playableAway, visibleFind, isBasicTrash } from '../../basics/hanabi-util.js';
 import logger from '../../logger.js';
 import * as Utils from '../../util.js';
+// import { find_focus_possible } from './clue-interpretation/focus-possible.js';
 
 /**
  * @typedef {import('../../basics/State.js').State} State
@@ -174,7 +175,7 @@ export function interpret_discard(state, action, card) {
 					break;
 				}
 			}
-			if (!inference) {
+			if (!inference && previous_card.clued) {
 				previousChopIndex = i;
 				logger.info(`found known trash in slot ${i} (${Utils.logCard(previous_hand[i])})`);
 				break;
@@ -186,7 +187,6 @@ export function interpret_discard(state, action, card) {
 		}
 		if (previousChopIndex !== discarded_slot) {
 			// Step 3: Check everyone else's hand to see if they have a playable card in that slot.
-			// TODO: Fix ambiguous positional discard.
 			const possible = [];
 			for (let search_player = 0; search_player < state.numPlayers; search_player++) {
 				// Ignore our own hand and the giver's hand
@@ -197,9 +197,9 @@ export function interpret_discard(state, action, card) {
 				const playable_away = playableAway(state, other_card.suitIndex, other_card.rank);
 				const hypo_away = other_card.rank - (state.hypo_stacks[other_card.suitIndex] + 1);
 
-				if ((playable_away === 0) && (hypo_away === 0) && !other_card.clued && !other_card.finessed) {
+				if ((playable_away === 0) && (hypo_away === 0) && !other_card.finessed) {
 					possible.push(search_player);
-					logger.info(`found immediate playable ${Utils.logCard(other_card)} in player index ${search_player} hand`);
+					logger.info(`found immediate playable ${Utils.logCard(other_card)} in ${state.playerNames[search_player]}'s hand`);
 				}
 			}
 			// Step 4: Generate all immediate playables.
@@ -210,18 +210,66 @@ export function interpret_discard(state, action, card) {
 					all_playable.push({suitIndex: stackIndex, rank: state.play_stacks[stackIndex]+1});
 				}
 			}
-			// Eliminate possibilities.
 			if (possible.length === 0) {
 				// If no one has a playable, mark my card as the possible discarded.
 				logger.info(`could not find playable, assuming own hand`);
-				possible.push(state.ourPlayerIndex);
-			}
-			// Step 5: Note down card(s) as playable.
-			for (let other_index = 0; other_index < possible.length; other_index++) {
-				const possible_card = state.hands[possible[other_index]][discarded_slot];
-				// possible_card.inferred = Utils.objClone(state.hands[possible[other_index]][discarded_slot].possible);
+				const possible_card = state.hands[state.ourPlayerIndex][discarded_slot];
+
 				possible_card.intersect('inferred', all_playable);
 				possible_card.finessed = true;
+				return;
+			}
+			// Step 5: Note down card(s) as playable.
+
+			// Generates the order that people would play their cards from the discarders perspective
+			const last_player_order = [];
+			let temp = playerIndex;
+			for (let i = 0; i < state.numPlayers; i++) {
+				temp--;
+				temp = temp % state.numPlayers;
+				last_player_order.push(temp);
+			}
+			logger.debug(`positional order is ${last_player_order.map(c => state.playerNames[c])}`);
+			logger.info('ordering hands');
+			const connections = [];
+			let after_search = true;
+			for (let other_index = 0; other_index < last_player_order.length; other_index++) {
+				const search_index = last_player_order[other_index];
+				if (search_index == state.ourPlayerIndex) {
+					// Everyone after us does not have a playable
+					logger.info('after search unsuccessful, assuming own hand or earlier');
+					after_search = false;
+					continue;
+				}
+				logger.debug(`searching ${state.playerNames[search_index]}`);
+				if (possible.includes(search_index)) {
+					logger.info(`found immediate playable in ${state.playerNames[search_index]}'s hand`);
+					const possible_card = state.hands[search_index][discarded_slot];
+
+					if (after_search) {
+						// Someone after us has a playable, end search
+						possible_card.intersect('inferred', all_playable);
+						possible_card.finessed = true;
+						logger.info(`playble card found after us, ending search`)
+						return;
+					} else {
+						// Someone before us has a playable, we need to wait for them
+						possible_card.old_inferred = Utils.objClone(possible_card.inferred);
+						possible_card.intersect('inferred', all_playable);
+						possible_card.finessed = true;
+						const connection = {type: 'positional discard', reacting: search_index, card: possible_card};
+						connections.push(connection);
+					}
+				}
+			}
+			if (connections.length > 0) {
+				// Adds connections if there are any.
+				connections.reverse();
+				// @ts-ignore
+				state.waiting_connections.push({ connections, focused_card: state.hands[state.ourPlayerIndex][discarded_slot], inference: { suitIndex: -1, rank: -1 } });
+			} else {
+				state.hands[state.ourPlayerIndex][discarded_slot].intersect('inferred', all_playable);
+				state.hands[state.ourPlayerIndex][discarded_slot].finessed = true;
 			}
 		}
 	}
