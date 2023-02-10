@@ -120,7 +120,10 @@ export function update_turn(state, action) {
 					}
 					// Playing into positional discards indicate that we do not have a playable
 					if (type === 'positional discard') {
-						remove_finesse(state, i);
+						connections.shift();
+						if (connections.length > 0) {
+							remove_finesse(state, i);
+						}
 						to_remove.push(i);
 					}
 					// Finesses demonstrate that a card must be playable and not save
