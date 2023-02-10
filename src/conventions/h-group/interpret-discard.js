@@ -229,7 +229,7 @@ export function interpret_discard(state, action, card) {
 				temp = temp % state.numPlayers;
 				last_player_order.push(temp);
 			}
-			logger.debug(`positional order is ${last_player_order.map(c => state.playerNames[c])}`);
+			logger.info(`positional order is ${last_player_order.map(c => state.playerNames[c])}`);
 			logger.info('ordering hands');
 			const connections = [];
 			let after_search = true;
@@ -250,7 +250,7 @@ export function interpret_discard(state, action, card) {
 						// Someone after us has a playable, end search
 						possible_card.intersect('inferred', all_playable);
 						possible_card.finessed = true;
-						logger.info(`playble card found after us, ending search`)
+						logger.info(`playble card found after us, ending search`);
 						return;
 					} else {
 						// Someone before us has a playable, we need to wait for them
@@ -266,7 +266,7 @@ export function interpret_discard(state, action, card) {
 				// Adds connections if there are any.
 				connections.reverse();
 				// @ts-ignore
-				state.waiting_connections.push({ connections, focused_card: state.hands[state.ourPlayerIndex][discarded_slot], inference: { suitIndex: -1, rank: -1 } });
+				state.waiting_connections.push({ connections, focused_card: state.hands[state.ourPlayerIndex][discarded_slot], inference: { suitIndex: -2, rank: -2 } });
 			} else {
 				state.hands[state.ourPlayerIndex][discarded_slot].intersect('inferred', all_playable);
 				state.hands[state.ourPlayerIndex][discarded_slot].finessed = true;

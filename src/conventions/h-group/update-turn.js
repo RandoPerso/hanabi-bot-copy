@@ -47,6 +47,7 @@ function remove_finesse(state, waiting_index) {
 	} else {
 		focused_card.inferred = focused_card.old_inferred;
 		focused_card.old_inferred = undefined;
+		return;
 	}
 
 	// Update hypo stacks if the card is now playable
@@ -114,13 +115,17 @@ export function update_turn(state, action) {
 				// The card was played
 				if (state.last_actions[reacting].type === 'play') {
 					logger.info(`waiting card ${Utils.logCard(card)} played`);
-					connections.shift();
 					if (connections.length === 0) {
 						to_remove.push(i);
 					}
-
+					// Playing into positional discards indicate that we do not have a playable
+					if (type === 'positional discard') {
+						remove_finesse(state, i);
+						to_remove.push(i);
+					}
 					// Finesses demonstrate that a card must be playable and not save
-					if (type === 'finesse') {
+					else if (type === 'finesse') {
+						connections.shift();
 						const prev_card = demonstrated.find(({ card }) => card.order === focused_card.order);
 						if (prev_card === undefined) {
 							demonstrated.push({card: focused_card, inferences: [inference]});
@@ -128,12 +133,6 @@ export function update_turn(state, action) {
 						else {
 							prev_card.inferences.push(inference);
 						}
-					}
-					// Playing into positional discards indicate that we do not have a playable
-					else if (type === 'positional discard') {
-						connections.shift();
-						remove_finesse(state, i);
-						to_remove.push(i);
 					}
 				}
 				// The card was discarded and its copy is not visible

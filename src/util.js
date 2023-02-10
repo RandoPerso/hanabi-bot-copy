@@ -183,7 +183,10 @@ export function objEquals(obj1, obj2) {
 export function logCard(card) {
 	let suitIndex, rank, append;
 
-	if (card.suitIndex !== -1) {
+	if (card.suitIndex === -2) {
+		return '(unknown)'
+	}
+	else if (card.suitIndex !== -1) {
 		({ suitIndex, rank } = card);
 	}
 	else if (card?.possible.length === 1) {
