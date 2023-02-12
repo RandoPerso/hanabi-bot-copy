@@ -115,12 +115,12 @@ export function update_turn(state, action) {
 				// The card was played
 				if (state.last_actions[reacting].type === 'play') {
 					logger.info(`waiting card ${Utils.logCard(card)} played`);
+					connections.shift();
 					if (connections.length === 0) {
 						to_remove.push(i);
 					}
 					// Playing into positional discards indicate that we do not have a playable
 					if (type === 'positional discard') {
-						connections.shift();
 						if (connections.length > 0) {
 							remove_finesse(state, i);
 						}
@@ -128,7 +128,6 @@ export function update_turn(state, action) {
 					}
 					// Finesses demonstrate that a card must be playable and not save
 					else if (type === 'finesse') {
-						connections.shift();
 						const prev_card = demonstrated.find(({ card }) => card.order === focused_card.order);
 						if (prev_card === undefined) {
 							demonstrated.push({card: focused_card, inferences: [inference]});

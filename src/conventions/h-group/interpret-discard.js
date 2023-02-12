@@ -169,13 +169,17 @@ export function interpret_discard(state, action, card) {
 		for (let i = 0; i < previous_hand.length; i++) {
 			const previous_card = previous_hand[i];
 			let inference = false;
+			if (!previous_card.clued) {
+				// TODO: Allow positional discard to hit clued cards in specific circumstances.
+				continue;
+			}
 			for (let j = 0; j < previous_card.inferred.length; j++) {
 				if (!isBasicTrash(state, previous_card.inferred[j].suitIndex, previous_card.inferred[j].rank)) {
 					inference = true;
 					break;
 				}
 			}
-			if (!inference && previous_card.clued) {
+			if (!inference) {
 				previousChopIndex = i;
 				logger.info(`found known trash in slot ${i} (${Utils.logCard(previous_hand[i])})`);
 				break;
@@ -271,6 +275,7 @@ export function interpret_discard(state, action, card) {
 				state.hands[state.ourPlayerIndex][discarded_slot].intersect('inferred', all_playable);
 				state.hands[state.ourPlayerIndex][discarded_slot].finessed = true;
 			}
+			return;
 		}
 	}
 }

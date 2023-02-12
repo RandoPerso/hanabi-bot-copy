@@ -184,7 +184,7 @@ export function logCard(card) {
 	let suitIndex, rank, append;
 
 	if (card.suitIndex === -2) {
-		return '(unknown)'
+		return '(unknown)';
 	}
 	else if (card.suitIndex !== -1) {
 		({ suitIndex, rank } = card);

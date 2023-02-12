@@ -215,7 +215,7 @@ export function take_action(state) {
 				const playable_away = playableAway(state, suitIndex, rank);
 				const hypo_away = rank - (state.hypo_stacks[suitIndex] + 1);
 
-				if ((playable_away === 0) && (hypo_away === 0) && !finessed) {
+				if ((playable_away === 0) && (hypo_away === 0) && !finessed && !clued) {
 					other_playables.push([cardIndex, target, last_player_order.indexOf(target)]);
 					logger.info(`found playable ${Utils.logCard(card)} (order ${card.order}) in slot ${cardIndex + 1}`);
 				}
@@ -236,6 +236,7 @@ export function take_action(state) {
 					positional_playables.splice(accounted_slots.indexOf(slot), 1, other_playables[1]);
 				}
 			}
+			// TODO: Allow the bot to correct which card was actually played in case of mistakes.
 			const chosen_card = other_playables[Math.floor(Math.random() * other_playables.length)];
 			const card_identity = state.hands[chosen_card[1]][chosen_card[0]];
 			logger.info(`discarding for ${Utils.logCard(card_identity)} in ${state.playerNames[chosen_card[1]]}'s hand`);
