@@ -192,7 +192,9 @@ export function take_action(state) {
 		let temp = state.ourPlayerIndex;
 		for (let i = 0; i < state.numPlayers; i++) {
 			temp--;
-			temp = temp % state.numPlayers;
+			if (temp < 0) {
+				temp = state.numPlayers - 1;
+			}
 			last_player_order.push(temp);
 		}
 		logger.debug(`positional order is ${last_player_order.map(c => state.playerNames[c])}`);

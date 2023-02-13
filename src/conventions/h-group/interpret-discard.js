@@ -230,7 +230,9 @@ export function interpret_discard(state, action, card) {
 			let temp = playerIndex;
 			for (let i = 0; i < state.numPlayers; i++) {
 				temp--;
-				temp = temp % state.numPlayers;
+				if (temp < 0) {
+					temp = state.numPlayers - 1;
+				}
 				last_player_order.push(temp);
 			}
 			logger.info(`positional order is ${last_player_order.map(c => state.playerNames[c])}`);
