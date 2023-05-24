@@ -4,7 +4,11 @@ import { ACTION, CLUE } from './constants.js';
 import logger from './logger.js';
 import { shortForms } from './variants.js';
 
-/** @typedef {import('./basics/Hand.js').Hand} Hand */
+/**
+ * @typedef {import('./basics/Hand.js').Hand} Hand
+ * @typedef {import('./types.js').Clue} Clue
+ * @typedef {import('./types.js').PerformAction} PerformAction
+ */
 
 const globals = {};
 
@@ -15,6 +19,25 @@ const globals = {};
 export function globalModify(obj) {
 	Object.assign(globals, obj);
 }
+
+/**
+ *	Parses the command-line arguments into an object.
+ */
+export function parse_args() {
+	const args = /** @type {Record<string, string>} */ ({}), arg_lines = process.argv.slice(2);
+
+	for (const arg_line of arg_lines) {
+		const parts = arg_line.split('=');
+		if (parts.length === 2 && arg_line.length >= 3) {
+			args[parts[0]] = parts[1];
+		}
+		else {
+			args[parts[0]] = 'true';
+		}
+	}
+	return args;
+}
+
 
 /**
  * Initializes the console interactivity with the game state.
@@ -36,22 +59,27 @@ export function initConsole() {
 			return;
 		}
 
+		if (key.sequence === '\x7F') {
+			key.sequence = '\b';
+		}
+
 		process.stdout.write(key.sequence);
 		switch(key.sequence) {
-			case '\r': {
-				console.log();
+			case '\r':
+			case '\n': {
+				logger.info();
 				const parts = command.join('').split(' ');
 				const { state } = globals;
 
 				switch(parts[0]) {
 					case 'hand': {
 						if (parts.length !== 2) {
-							console.log('Correct usage is "hand <playerName>"');
+							logger.warn('Correct usage is "hand <playerName>"');
 							break;
 						}
 						const playerName = parts[1];
 						if (!state.playerNames.includes(playerName)) {
-							console.log('That player is not in this room.');
+							logger.error('That player is not in this room.');
 							console.log(state.playerNames, playerName);
 							break;
 						}
@@ -62,6 +90,37 @@ export function initConsole() {
 					case 'state':
 						console.log(state[parts[1]]);
 						break;
+					case 'navigate':
+					case 'nav': {
+						if (parts.length !== 2) {
+							logger.warn('Correct usage is "navigate <turn>"');
+							break;
+						}
+
+						if (state.in_progress) {
+							logger.warn('Cannot navigate while game is in progress.');
+							break;
+						}
+
+						const turn = parts[1] === '+' ? state.turn_count + 1 :
+									parts[1] === '++' ? state.turn_count + state.numPlayers :
+									parts[1] === '-' ? state.turn_count - 1 :
+									parts[1] === '--' ? state.turn_count - state.numPlayers :
+										Number(parts[1]);
+
+						if (isNaN(turn)) {
+							logger.warn('Please provide a valid turn number.');
+							break;
+						}
+
+						if (!state.actionList.some(action => action.type === 'turn' && action.num === turn)) {
+							logger.error(`Turn ${turn} does not exist.`);
+							break;
+						}
+
+						state.navigate(turn);
+						break;
+					}
 				}
 				command = [];
 				break;
@@ -77,12 +136,21 @@ export function initConsole() {
 }
 
 /**
- * Sends a chat message in hanab.live to the recipient.
+ * Sends a private chat message in hanab.live to the recipient.
  * @param {string} recipient
  * @param {string} msg
  */
-export function sendChat(recipient, msg) {
+export function sendPM(recipient, msg) {
 	sendCmd('chatPM', { msg, recipient, room: 'lobby' });
+}
+
+/**
+ * Sends a chat message in hanab.live to the room.
+ * @param {number} tableID
+ * @param {string} msg
+ */
+export function sendChat(tableID, msg) {
+	sendCmd('chat', { msg, room: `table${tableID}` });
 }
 
 /**
@@ -136,6 +204,31 @@ export function objPick(obj, attributes) {
 		new_obj[attr] = obj[attr];
 	}
 	return new_obj;
+}
+
+/**
+ * Returns the "maximum" object in an array based on a value function.
+ * @template T
+ * @param  {T[]} arr 						The array of objects.
+ * @param  {(obj: T) => number} valueFunc	A function that takes in an object and returns its value.
+ */
+export function maxOn(arr, valueFunc) {
+	if (arr.length === 0) {
+		return undefined;
+	}
+
+	let max_value = valueFunc(arr[0]), max = arr[0];
+
+	for (let i = 0; i < arr.length; i++) {
+		const curr = valueFunc(arr[i]);
+
+		if (curr > max_value) {
+			max_value = curr;
+			max = arr[i];
+		}
+	}
+
+	return max;
 }
 
 /**
@@ -233,15 +326,51 @@ export function logHand(hand) {
 
 /**
  * Returns a log-friendly representation of a clue.
- * @param {import('./types.js').Clue} clue
+ * @param {Clue | PerformAction} clue
  */
 export function logClue(clue) {
 	if (clue === undefined) {
 		return;
 	}
-	const value = [CLUE.COLOUR, ACTION.COLOUR].includes(clue.type) ? globals.state.suits[clue.value].toLowerCase() : clue.value;
+	const value = (clue.type === CLUE.COLOUR || clue.type === ACTION.COLOUR) ? globals.state.suits[clue.value].toLowerCase() : clue.value;
 
 	return `(${value} to ${globals.state.playerNames[clue.target]})`;
+}
+
+/**
+ * Returns a log-friendly representation of an action.
+ * @param  {PerformAction} action
+ */
+export function logAction(action) {
+	if (action === undefined) {
+		return;
+	}
+
+	const { type, target } = action;
+
+	const hand = globals.state.hands[globals.state.ourPlayerIndex];
+
+	switch(type) {
+		case ACTION.PLAY: {
+			const slot = hand.findIndex(card => card.order === target) + 1;
+			const card = hand[slot - 1];
+
+			return `Play slot ${slot}, inferences [${card.inferred.map(c => logCard(c))}]`;
+		}
+		case ACTION.DISCARD: {
+			const slot = hand.findIndex(card => card.order === target) + 1;
+			const card = hand[slot - 1];
+
+			return `Discard slot ${slot}, inferences [${card.inferred.map(c => logCard(c))}]`;
+		}
+		case ACTION.COLOUR:
+		case ACTION.RANK:
+			return logClue(action);
+		case ACTION.END_GAME:
+			return JSON.stringify(action);
+		default:
+			throw new Error('Attempted to log invalid action');
+	}
 }
 
 /**
@@ -284,4 +413,15 @@ export function writeNote(turn, card, tableID) {
 
 		setTimeout(() => sendCmd('note', { tableID, order: card.order, note: card.full_note }), Math.random() * 3000);
 	}
+}
+
+/**
+ * Transforms a CLUE into an ACTION.
+ * @param  {Clue} clue
+ * @param  {number} tableID
+ * @return {PerformAction}
+ */
+export function clueToAction(clue, tableID) {
+	const { type, value, target } = clue;
+	return { tableID, type: /** @type {ACTION[keyof ACTION]} */ (type + 2), value, target };
 }

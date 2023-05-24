@@ -1,12 +1,12 @@
 import { Card } from '../../basics/Card.js';
 import { find_chop } from './hanabi-logic.js';
-import { isTrash, playableAway, visibleFind, isBasicTrash } from '../../basics/hanabi-util.js';
+import { isSaved, isTrash, playableAway, visibleFind, isBasicTrash } from '../../basics/hanabi-util.js';
 import logger from '../../logger.js';
 import * as Utils from '../../util.js';
 // import { find_focus_possible } from './clue-interpretation/focus-possible.js';
 
 /**
- * @typedef {import('../../basics/State.js').State} State
+ * @typedef {import('../h-group.js').default} State
  * @typedef {import('../../basics/Hand.js').Hand} Hand
  */
 
@@ -76,22 +76,26 @@ function apply_unknown_sarcastic(state, sarcastic, playerIndex, suitIndex, rank)
 export function interpret_discard(state, action, card) {
 	const { order, playerIndex, rank, suitIndex, failed } = action;
 
-	// Early game and discard wasn't known trash or misplay, so end early game
-	if (state.early_game && !isTrash(state, playerIndex, suitIndex, rank, order) && !action.failed) {
-		logger.warn('ending early game from discard of', Utils.logCard(card));
-		state.early_game = false;
+	// End early game?
+	if (state.early_game && !action.failed &&										// Not bombed
+		!(card.clued && isSaved(state, playerIndex, suitIndex, rank, order)) && 	// Not clued card that is duplicated
+		!card.possible.every(c => isBasicTrash(state, c.suitIndex, c.rank))) {		// Not known trash
+			logger.warn('ending early game from discard of', Utils.logCard(card));
+			state.early_game = false;
 	}
 
 	// If bombed or the card doesn't match any of our inferences (and is not trash), rewind to the reasoning and adjust
 	if (!card.rewinded && (failed || (!card.matches_inferences() && !isTrash(state, state.ourPlayerIndex, card.suitIndex, card.rank, card.order)))) {
 		logger.info('all inferences', card.inferred.map(c => Utils.logCard(c)));
-		if (state.rewind(card.reasoning.pop(), playerIndex, order, suitIndex, rank, card.finessed)) {
+		const action_index = card.reasoning.pop();
+		if (action_index !== undefined && state.rewind(action_index, { type: 'identify', order, playerIndex, suitIndex, rank }, card.finessed)) {
 			return;
 		}
 	}
 
 	// Discarding a useful card
 	if ((card.clued || card.chop_moved || card.finessed) && rank > state.play_stacks[suitIndex] && rank <= state.max_ranks[suitIndex]) {
+		logger.warn('discarded useful card!');
 		const duplicates = visibleFind(state, playerIndex, suitIndex, rank);
 
 		// Card was bombed
@@ -99,24 +103,27 @@ export function interpret_discard(state, action, card) {
 			undo_hypo_stacks(state, playerIndex, suitIndex, rank);
 		}
 		else {
-			// Sarcastic discard to us
+			// Unknown sarcastic discard to us
 			if (duplicates.length === 0) {
 				const sarcastic = find_sarcastic(state.hands[state.ourPlayerIndex], suitIndex, rank);
 
 				if (sarcastic.length === 1) {
-					sarcastic[0].inferred = [new Card(suitIndex, rank)];
+					const action_index = sarcastic[0].reasoning.pop();
+					if (action_index !== undefined && state.rewind(action_index, { type: 'identify', order: sarcastic[0].order, playerIndex: state.ourPlayerIndex, suitIndex, rank })) {
+						return;
+					}
 				}
 				else {
 					apply_unknown_sarcastic(state, sarcastic, playerIndex, suitIndex, rank);
 				}
 			}
-			// Sarcastic discard to other
+			// Sarcastic discard to other (or known sarcastic discard to us)
 			else {
-				for (let i = 1; i < state.numPlayers; i++) {
+				for (let i = 0; i < state.numPlayers; i++) {
 					const receiver = (state.ourPlayerIndex + i) % state.numPlayers;
 					const sarcastic = find_sarcastic(state.hands[receiver], suitIndex, rank);
 
-					if (sarcastic.some(c => c.matches(suitIndex, rank) && c.clued)) {
+					if (sarcastic.some(c => c.matches(suitIndex, rank, { infer: receiver === state.ourPlayerIndex }) && c.clued)) {
 						// The matching card must be the only possible option in the hand to be known sarcastic
 						if (sarcastic.length === 1) {
 							sarcastic[0].inferred = [new Card(suitIndex, rank)];

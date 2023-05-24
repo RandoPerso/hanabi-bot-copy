@@ -1,6 +1,5 @@
-import { CLUE } from'./constants.js';
+import { CLUE, END_CONDITION } from'./constants.js';
 import { Card } from'./basics/Card.js';
-import { good_touch_elim, update_hypo_stacks } from'./basics/helper.js';
 import logger from'./logger.js';
 import * as Basics from'./basics.js';
 import * as Utils from'./util.js';
@@ -10,6 +9,7 @@ import * as Utils from'./util.js';
  * @typedef {import('./types.js').ClueAction} ClueAction
  * @typedef {import('./types.js').DiscardAction} DiscardAction
  * @typedef {import('./types.js').CardAction} CardAction
+ * @typedef {import('./types.js').PlayAction} PlayAction
  * @typedef {import('./basics/State.js').State} State
  */
 
@@ -34,9 +34,9 @@ export function handle_action(action, catchup = false) {
 			else {
 				clue_value = clue.value;
 			}
-			logger.warn(`${playerName} clues ${clue_value} to ${targetName}`);
+			logger.highlight('yellowb', `Turn ${this.turn_count}: ${playerName} clues ${clue_value} to ${targetName}`);
 
-			this.interpret_clue(this, /** @type {ClueAction} */ (action));
+			this.interpret_clue(this, action);
 			this.last_actions[giver] = action;
 
 			// Remove the newly_clued flag
@@ -44,6 +44,9 @@ export function handle_action(action, catchup = false) {
 				const card = this.hands[target].findOrder(order);
 				card.newly_clued = false;
 			}
+
+			// Clear the list of ignored cards
+			this.next_ignore = [];
 			break;
 		}
 		case 'discard': {
@@ -54,32 +57,59 @@ export function handle_action(action, catchup = false) {
 
 			// Assign the card's identity if it isn't already known
 			Object.assign(card, {suitIndex, rank});
-			logger.warn(`${playerName} ${failed ? 'bombs' : 'discards'} ${Utils.logCard(card)}`);
+			logger.highlight('yellowb', `Turn ${this.turn_count}: ${playerName} ${failed ? 'bombs' : 'discards'} ${Utils.logCard(card)}`);
 
-			Basics.onDiscard(this, /** @type {DiscardAction} */ (action));
-			this.interpret_discard(this, /** @type {DiscardAction} */ (action), card);
+			Basics.onDiscard(this, action);
+			this.interpret_discard(this, action, card);
 			this.last_actions[playerIndex] = action;
 			break;
 		}
 		case 'draw': {
 			// { type: 'draw', playerIndex: 0, order: 2, suitIndex: 1, rank: 2 },
-			Basics.onDraw(this, /** @type {CardAction} */ (action));
+			Basics.onDraw(this, action);
 			break;
 		}
-		case 'gameOver':
-			logger.info('gameOver', action);
+		case 'gameOver': {
+			const { endCondition, playerIndex } = action;
+
+			switch(endCondition) {
+				case END_CONDITION.NORMAL:
+					logger.highlight('redb', `Players score ${this.play_stacks.reduce((acc, stack) => acc += stack, 0)} points.`);
+					break;
+				case END_CONDITION.STRIKEOUT:
+					logger.highlight('redb', `Players lose!`);
+					break;
+				case END_CONDITION.TERMINATED:
+					logger.highlight('redb', `${this.playerNames[playerIndex]} terminated the game!`);
+					break;
+				case END_CONDITION.IDLE_TIMEOUT:
+					logger.highlight('redb', 'Players were idle for too long.');
+					break;
+				default:
+					logger.info('gameOver', action);
+					break;
+			}
+			this.in_progress = false;
 			break;
+		}
 		case 'turn': {
 			//  { type: 'turn', num: 1, currentPlayerIndex: 1 }
 			const { currentPlayerIndex } = action;
 			if (currentPlayerIndex === this.ourPlayerIndex && !catchup) {
-				setTimeout(() => this.take_action(this), 2000);
+				if (this.in_progress) {
+					setTimeout(() => Utils.sendCmd('action', this.take_action(this)), 2000);
 
-				// Update notes on cards
-				for (const card of this.hands[this.ourPlayerIndex]) {
-					if (card.clued || card.finessed || card.chop_moved) {
-						Utils.writeNote(this.turn_count + 1, card, this.tableID);
+					// Update notes on cards
+					for (const card of this.hands[this.ourPlayerIndex]) {
+						if (card.clued || card.finessed || card.chop_moved) {
+							Utils.writeNote(this.turn_count + 1, card, this.tableID);
+						}
 					}
+				}
+				// Replaying a turn
+				else {
+					const suggested_action = this.take_action(this);
+					logger.highlight('cyan', 'Suggested action:', Utils.logAction(suggested_action));
 				}
 			}
 
@@ -94,46 +124,35 @@ export function handle_action(action, catchup = false) {
 
 			// Assign the card's identity if it isn't already known
 			Object.assign(card, {suitIndex, rank});
-			logger.warn(`${playerName} plays ${Utils.logCard(card)}`);
+			logger.highlight('yellowb', `Turn ${this.turn_count}: ${playerName} plays ${Utils.logCard(card)}`);
 
-			// If the card doesn't match any of our inferences, rewind to the reasoning and adjust
-			if (!card.rewinded && playerIndex === this.ourPlayerIndex && (card.inferred.length > 1 || !card.matches_inferences())) {
-				logger.info('all inferences', card.inferred.map(c => Utils.logCard(c)));
-				if (this.rewind(card.reasoning.pop(), playerIndex, order, suitIndex, rank, false)) {
-					return;
-				}
-			}
-			this.hands[playerIndex].removeOrder(order);
-
-			this.play_stacks[suitIndex] = rank;
-
-			// Apply good touch principle on remaining possibilities
-			for (const hand of this.hands) {
-				good_touch_elim(hand, [{suitIndex, rank}], { hard: true });
-			}
-
-			// Update hypo stacks
-			update_hypo_stacks(this);
-
+			this.interpret_play(this, action);
 			this.last_actions[playerIndex] = action;
-
-			// Get a clue token back for playing a 5
-			if (rank === 5 && this.clue_tokens < 8) {
-				this.clue_tokens++;
-			}
 			break;
 		}
-		case 'rewind': {
+		case 'identify': {
 			const { order, playerIndex, suitIndex, rank } = action;
 
 			const card = this.hands[playerIndex].findOrder(order);
 			if (card === undefined) {
 				throw new Error('Could not find card to rewrite!');
 			}
+			logger.info(`identifying card with order ${order} as ${Utils.logCard({ suitIndex, rank })}`);
 			card.possible = [new Card(suitIndex, rank)];
 			card.inferred = [new Card(suitIndex, rank)];
 			card.finessed = true;
 			card.rewinded = true;
+			break;
+		}
+		case 'ignore': {
+			const { order, playerIndex } = action;
+
+			const card = this.hands[playerIndex].findOrder(order);
+			if (card === undefined) {
+				throw new Error('Could not find card to ignore!');
+			}
+
+			this.next_ignore.push(card.order);
 			break;
 		}
 		default:

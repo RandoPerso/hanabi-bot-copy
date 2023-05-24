@@ -10,6 +10,7 @@ import * as Utils from './util.js';
  * @typedef {import('./types.js').ClueAction} ClueAction
  * @typedef {import('./types.js').DiscardAction} DiscardAction
  * @typedef {import('./types.js').CardAction} DrawAction
+ * @typedef {import('./types.js').PlayAction} PlayAction
  */
 
 /**
@@ -66,6 +67,10 @@ export function onDiscard(state, action) {
 		state.max_ranks[suitIndex] = rank - 1;
 	}
 
+	if (failed) {
+		state.strikes++;
+	}
+
 	// Bombs count as discards, but they don't give a clue token
 	if (!failed && state.clue_tokens < 8) {
 		state.clue_tokens++;
@@ -97,6 +102,22 @@ export function onDraw(state, action) {
 
 /**
  * @param {State} state
+ * @param {PlayAction} action
+ */
+export function onPlay(state, action) {
+	const { order, playerIndex, rank, suitIndex } = action;
+	state.hands[playerIndex].removeOrder(order);
+
+	state.play_stacks[suitIndex] = rank;
+
+	// Get a clue token back for playing a 5
+	if (rank === 5 && state.clue_tokens < 8) {
+		state.clue_tokens++;
+	}
+}
+
+/**
+ * @param {State} state
  * @param {number} suitIndex
  * @param {number} rank
  * @param {number[]} [ignorePlayerIndexes]
@@ -116,9 +137,6 @@ export function card_elim(state, suitIndex, rank, ignorePlayerIndexes = []) {
 		const certain_count = base_count + visibleFind(state, playerIndex, suitIndex, rank, { infer: false }).length;
 		const inferred_count = base_count + visibleFind(state, playerIndex, suitIndex, rank).length;
 		const total_count = cardCount(state.suits[suitIndex], rank);
-
-		logger.debug('checking count for card', Utils.logCard({suitIndex, rank}));
-		logger.debug(`base ${base_count} certain ${certain_count} inferred ${inferred_count} total ${total_count}`);
 
 		// Note that inferred_count >= certain_count.
 		// If all copies of a card are already visible (or there exist too many copies)

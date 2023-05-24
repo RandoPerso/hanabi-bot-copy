@@ -5,7 +5,7 @@ import logger from '../../logger.js';
 import * as Utils from '../../util.js';
 
 /**
- * @typedef {import('../../basics/State.js').State} State
+ * @typedef {import('../h-group.js').default} State
  * @typedef {import('../../basics/Hand.js').Hand} Hand
  * @typedef {import('../../basics/Card.js').Card} Card
  */
@@ -13,15 +13,16 @@ import * as Utils from '../../util.js';
 /**
  * Returns the index (0-indexed) of the chop card in the given hand.
  * 
- * The 'includeNew' option ignores newly clued cards when determining chop.
+ * The 'afterClue' option can be set to true to find chop after a clue.
+ * Otherwise, the default behaviour finds chop which could be a newly clued card.
  * @param {Hand} hand
- * @param {{includeNew?: boolean}} options
+ * @param {{afterClue?: boolean}} options
  * @returns The index of the chop card, or -1 if the hand doesn't have a chop.
  */
 export function find_chop(hand, options = {}) {
 	for (let i = hand.length - 1; i >= 0; i--) {
 		const { clued, newly_clued, chop_moved } = hand[i];
-		if (chop_moved || (clued && (options.includeNew ? true : !newly_clued))) {
+		if (chop_moved || (clued && (options.afterClue ? true : !newly_clued))) {
 			continue;
 		}
 		return i;
@@ -40,7 +41,7 @@ export function find_chop(hand, options = {}) {
  */
 export function find_prompt(hand, suitIndex, rank, suits, ignoreOrders = []) {
 	for (const card of hand) {
-		const { clued, newly_clued, order, possible, clues } = card;
+		const { clued, newly_clued, order, inferred, possible, clues } = card;
 		// Ignore unclued, newly clued, and known cards (also intentionally ignored cards)
 		if (!clued || newly_clued || possible.length === 1 || ignoreOrders.includes(order)) {
 			continue;
@@ -51,6 +52,10 @@ export function find_prompt(hand, suitIndex, rank, suits, ignoreOrders = []) {
 			continue;
 		}
 
+		// Ignore cards that don't match and have information lock
+		if (inferred.length === 1 && !(inferred[0].suitIndex === suitIndex && inferred[0].rank === rank)) {
+			continue;
+		}
 
 		// A clue must match the card (or rainbow/omni connect)
 		if (clues.some(clue =>
@@ -66,26 +71,11 @@ export function find_prompt(hand, suitIndex, rank, suits, ignoreOrders = []) {
 /**
  * Finds a finesse in the hand for the given suitIndex and rank.
  * @param {Hand} hand
- * @param {number} suitIndex
- * @param {number} rank
  * @param {number[]} ignoreOrders 	Orders of cards to ignore when searching.
- * @returns {Card | undefined}	The prompted card, or undefined if no card is a valid finesse.
+ * @returns {Card}		The card on finesse position, or undefined if there is none.
  */
-export function find_finesse(hand, suitIndex, rank, ignoreOrders = []) {
-	for (const card of hand) {
-		// Ignore clued and finessed cards (also intentionally ignored cards)
-		if (card.clued || card.finessed || ignoreOrders.includes(card.order)) {
-			continue;
-		}
-
-		// Ignore cards that don't match the inference
-		if (!card.inferred.some(p => p.matches(suitIndex, rank))) {
-			continue;
-		}
-
-		return card;
-	}
-	return;
+export function find_finesse(hand, ignoreOrders = []) {
+	return hand.find(card => !card.clued && !card.finessed && !ignoreOrders.includes(card.order));
 }
 
 /**
@@ -133,12 +123,17 @@ export function determine_focus(hand, list, options = {}) {
  * @param {State} state
  * @param {Card[]} cards
  */
-export function find_bad_touch(state, cards) {
+export function find_bad_touch(state, cards, focusedCardOrder = -1) {
 	/** @type {Card[]} */
 	const bad_touch_cards = [];
 
 	for (const card of cards) {
 		let bad_touch = false;
+
+		// Assume focused card cannot be bad touched
+		if (card.order === focusedCardOrder) {
+			continue;
+		}
 
 		const { suitIndex, rank } = card;
 		// Card has already been played or can never be played
@@ -178,10 +173,7 @@ export function stall_severity(state, giver) {
 	if (state.clue_tokens === 7 && state.turn_count !== 0) {
 		return 4;
 	}
-	if (state.hands[giver].isLocked()) {
-		if (handLoaded(state, giver)) {
-			return 0;
-		}
+	if (state.hands[giver].isLocked(state) && !handLoaded(state, giver)) {
 		return 3;
 	}
 	if (state.early_game) {

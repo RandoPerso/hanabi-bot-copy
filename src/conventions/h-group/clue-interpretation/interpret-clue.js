@@ -1,4 +1,5 @@
 import { CLUE } from '../../../constants.js';
+import { LEVEL } from '../h-constants.js';
 import { Card } from '../../../basics/Card.js';
 import { interpret_tcm, interpret_5cm } from './interpret-cm.js';
 import { stalling_situation } from './interpret-stall.js';
@@ -12,7 +13,7 @@ import * as Basics from '../../../basics.js';
 import * as Utils from '../../../util.js';
 
 /**
- * @typedef {import('../../../basics/State.js').State} State
+ * @typedef {import('../../h-group.js').default} State
  * @typedef {import('../../../types.js').ClueAction} ClueAction
  * @typedef {import('../../../types.js').Connection} Connection
  */
@@ -27,14 +28,8 @@ function apply_good_touch(state, action) {
 	const { giver, list, target } = action;
 	let fix = false;
 
-	/** @type {number[]} */
-	const had_inferences = [];
-
-	for (const card of state.hands[target]) {
-		if (card.inferred.length > 0) {
-			had_inferences.push(card.order);
-		}
-	}
+	// Keep track of all cards that previously had inferences (i.e. not known trash)
+	const had_inferences = state.hands[target].filter(card => card.inferred.length > 0).map(card => card.order);
 
 	Basics.onClue(state, action);
 
@@ -50,32 +45,24 @@ function apply_good_touch(state, action) {
 				card.subtract('inferred', bad_touch);
 			}
 
-			// Lost all inferences (fix), revert to good touch principle (must not have been known trash)
-			if (card.inferred.length === 0 && had_inferences.includes(card.order) && list.includes(card.order) &&
-				!card.newly_clued && !card.reset
-			) {
-				fix = true;
-				card.inferred = Utils.objClone(card.possible);
-				card.subtract('inferred', bad_touch);
-				card.reset = true;
-			}
+			// Check for fix on retouched cards
+			if (list.includes(card.order) && !card.newly_clued) {
+				// Lost all inferences, revert to good touch principle (must not have been known trash)
+				if (card.inferred.length === 0 && had_inferences.includes(card.order) && !card.reset) {
+					fix = true;
+					card.inferred = Utils.objClone(card.possible);
+					card.subtract('inferred', bad_touch);
+					card.reset = true;
+					continue;
+				}
+				// Directly revealing a duplicated card in someone else's hand (if we're using an inference, the card must match the inference, unless it's unknown)
+				else if (card.possible.length === 1) {
+					const { suitIndex, rank } = card.possible[0];
 
-			// Directly fixing duplicates (if we're using an inference, the card must match the inference, unless it's unknown)
-			// (card.inferred.length === 1 && (target === state.ourPlayerIndex || card.matches_inferences()))
-			if (!fix && list.includes(card.order) && !card.newly_clued && card.possible.length === 1) {
-				const { suitIndex, rank } = card.possible[0];
-
-				// The fix can be in anyone's hand
-				for (const hand of state.hands) {
-					for (const c of hand) {
-						if ((c.clued || c.finessed) && c.matches(suitIndex, rank, { infer: true }) && c.order !== card.order) {
-							fix = true;
-							break;
-						}
-					}
-					if (fix) {
-						break;
-					}
+					// The fix can be in anyone's hand except the giver's
+					fix = state.hands.some((hand, index) =>
+						index !== giver && hand.some(c => (c.clued || c.finessed) && c.matches(suitIndex, rank, { infer: true }) && c.order !== card.order)
+					);
 				}
 			}
 		}
@@ -96,16 +83,20 @@ export function interpret_clue(state, action) {
 	const { clue, giver, list, target, mistake = false, ignoreStall = false } = action;
 	const fix = apply_good_touch(state, action);
 
-	const { focused_card } = determine_focus(state.hands[target], list);
+	const { focused_card, chop } = determine_focus(state.hands[target], list);
+
+	if (chop) {
+		focused_card.chop_when_first_clued = true;
+	}
 
 	if (focused_card.inferred.length === 0) {
 		focused_card.inferred = Utils.objClone(focused_card.possible);
-		logger.error('focused card had no inferences after applying good touch');
+		logger.warn('focused card had no inferences after applying good touch');
 	}
 
 	logger.debug('pre-inferences', focused_card.inferred.map(c => Utils.logCard(c)).join());
 
-	if (fix || mistake) {
+	if ((state.level >= LEVEL.FIX && fix) || mistake) {
 		logger.info(`${fix ? 'fix clue' : 'mistake'}! not inferring anything else`);
 		// FIX: Rewind to when the earliest card was clued so that we don't perform false eliminations
 		if (focused_card.inferred.length === 1) {
@@ -123,48 +114,49 @@ export function interpret_clue(state, action) {
 		return;
 	}
 
-	// Trash chop move
-	if (focused_card.newly_clued &&
-		focused_card.possible.every(c => isTrash(state, target, c.suitIndex, c.rank, focused_card.order, { infer: false })) &&
-		!(focused_card.inferred.every(c => playableAway(state, c.suitIndex, c.rank) === 0))
-	) {
-		interpret_tcm(state, target);
-		return;
-	}
-	// 5's chop move
-	else if (clue.type === CLUE.RANK && clue.value === 5 && focused_card.newly_clued) {
-		if (interpret_5cm(state, target)) {
+	// Check for chop moves at level 4+
+	if (state.level >= LEVEL.BASIC_CM) {
+		// Trash chop move
+		if (focused_card.newly_clued &&
+			focused_card.possible.every(c => isTrash(state, target, c.suitIndex, c.rank, focused_card.order, { infer: false })) &&
+			!(focused_card.inferred.every(c => playableAway(state, c.suitIndex, c.rank) === 0))
+		) {
+			interpret_tcm(state, target);
 			return;
+		}
+		// 5's chop move - for now, 5cm cannot be done in early game.
+		else if (clue.type === CLUE.RANK && clue.value === 5 && focused_card.newly_clued && !state.early_game) {
+			if (interpret_5cm(state, target)) {
+				return;
+			}
 		}
 	}
 
 	const focus_possible = find_focus_possible(state, action);
-	logger.info('focus possible', focus_possible.map(p => Utils.logCard(p)).join(','));
-	const matched_inferences = focus_possible.filter(p => {
-		if (target === state.ourPlayerIndex) {
-			return focused_card.inferred.some(c => c.matches(p.suitIndex, p.rank));
-		}
-		else {
-			return focused_card.matches(p.suitIndex, p.rank);
-		}
-	});
+	logger.info(`focus possible: [${focus_possible.map(p => Utils.logCard(p)).join(',')}]`);
+
+	const matched_inferences = focus_possible.filter(p => focused_card.inferred.some(c => c.matches(p.suitIndex, p.rank)));
+	const matched_correct = target === state.ourPlayerIndex || matched_inferences.some(p => focused_card.matches(p.suitIndex, p.rank));
 
 	// Card matches an inference and not a save/stall
-	if (matched_inferences.length >= 1) {
+	// If we know the identity of the card, one of the matched inferences must also be correct before we can give this clue.
+	if (matched_inferences.length >= 1 && matched_correct) {
 		focused_card.intersect('inferred', focus_possible);
 
 		for (const inference of matched_inferences) {
 			const { suitIndex, rank, connections, save = false } = inference;
 
 			if (!save) {
-				assign_connections(state, connections, suitIndex);
+				if ((target === state.ourPlayerIndex || focused_card.matches(suitIndex, rank))) {
+					assign_connections(state, connections, suitIndex);
+				}
 
 				// Only one inference, we can update hypo stacks
-				if (matched_inferences.length === 1) {
+				if (matched_inferences.length === 1 && (connections.length === 0 || !['prompt', 'finesse'].includes(connections[0].type))) {
 					team_elim(state, focused_card, giver, target, suitIndex, rank);
 				}
 				// Multiple inferences, we need to wait for connections
-				else if (connections.length > 0 && !connections[0].self) {
+				else if (connections.length > 0/* && !connections[0].self*/) {
 					state.waiting_connections.push({ connections, focused_card, inference: { suitIndex, rank } });
 				}
 			}
@@ -241,12 +233,11 @@ export function interpret_clue(state, action) {
 			}
 		}
 		else {
-			logger.info('playable!');
 			focused_card.inferred = [];
 
 			for (const { connections, conn_suit } of all_connections) {
 				assign_connections(state, connections, conn_suit);
-				const inference_rank = state.play_stacks[conn_suit] + 1 + connections.length;
+				const inference_rank = state.play_stacks[conn_suit] + 1 + connections.filter(conn => !conn.hidden).length;
 
 				// Add inference to focused card
 				focused_card.union('inferred', [new Card(conn_suit, inference_rank)]);
@@ -256,14 +247,16 @@ export function interpret_clue(state, action) {
 					team_elim(state, focused_card, giver, target, conn_suit, inference_rank);
 				}
 				// Multiple possible sets, we need to wait for connections
-				else {
+				else if (connections.length > 0) {
 					const inference = { suitIndex: conn_suit, rank: inference_rank };
 					state.waiting_connections.push({ connections, focused_card, inference });
 				}
 			}
+
+			state.hands.forEach(hand => hand.forEach(card => card.superposition = false));
 		}
 	}
-	logger.info('final inference on focused card', focused_card.inferred.map(c => Utils.logCard(c)).join(','));
+	logger.highlight('blue', 'final inference on focused card', focused_card.inferred.map(c => Utils.logCard(c)).join(','));
 	logger.debug('hand state after clue', Utils.logHand(state.hands[target]));
 	update_hypo_stacks(state);
 }
@@ -303,7 +296,7 @@ function team_elim(state, focused_card, giver, target, suitIndex, rank) {
 function assign_connections(state, connections, suitIndex) {
 	let next_rank = state.play_stacks[suitIndex] + 1;
 	for (const connection of connections) {
-		const { type, reacting, self } = connection;
+		const { type, reacting, self, hidden } = connection;
 		// The connections can be cloned, so need to modify the card directly
 		const card = state.hands[reacting].findOrder(connection.card.order);
 
@@ -311,16 +304,26 @@ function assign_connections(state, connections, suitIndex) {
 
 		// Save the old inferences in case the connection doesn't exist (e.g. not finesse)
 		card.old_inferred = Utils.objClone(card.inferred);
-		card.inferred = [new Card(suitIndex, next_rank)];
 
 		if (type === 'finesse') {
 			card.finessed = true;
 		}
 
-		next_rank++;
+		if (!hidden) {
+			// There are multiple possible connections on this card
+			if (card.superposition) {
+				card.union('inferred', [new Card(suitIndex, next_rank)]);
+			}
+			else {
+				card.inferred = [new Card(suitIndex, next_rank)];
+				card.superposition = true;
+			}
+			next_rank++;
+		}
 
 		// Updating notes not on our turn
-		if (self) {
+		// TODO: Examine why this originally had self only?
+		if (self || true) {
 			// There might be multiple possible inferences on the same card from a self component
 			if (card.reasoning.at(-1) !== state.actionList.length - 1) {
 				card.reasoning.push(state.actionList.length - 1);

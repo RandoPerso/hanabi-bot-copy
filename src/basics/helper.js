@@ -7,11 +7,13 @@ import * as Utils from '../util.js';
  * @typedef {import('./State.js').State} State
  * @typedef {import('./Hand.js').Hand} Hand
  * @typedef {import('./Card.js').Card} Card
+ * @typedef {import('../types.js').BaseClue} BaseClue
  * @typedef {import('../types.js').Clue} Clue
+ * @typedef {import('../types.js').BasicCard} BasicCard
  */
 
 /**
- * @param {Omit<Clue, 'target'>} clue
+ * @param {BaseClue} clue
  * @param {string[]} suits
  */
 export function find_possibilities(clue, suits) {
@@ -32,12 +34,12 @@ export function find_possibilities(clue, suits) {
  * @param {State} state
  * @param {number} giver
  * @param {number} target
- * @param {{suitIndex: number, rank: number}[]} prev_found
+ * @param {BasicCard[]} prev_found	All previously found bad touch possibiltiies.
  */
 export function bad_touch_possiblities(state, giver, target, prev_found = []) {
 	const bad_touch = prev_found;
 
-	if (prev_found.length === 0) {
+	if (bad_touch.length === 0) {
 		// Find useless cards
 		for (let suitIndex = 0; suitIndex <= state.suits.length; suitIndex++) {
 			for (let rank = 1; rank <= 5; rank++) {
@@ -52,6 +54,7 @@ export function bad_touch_possiblities(state, giver, target, prev_found = []) {
 	// Find cards clued in other hands (or inferred cards in our hand or giver's hand)
 	for (let i = 0; i < state.numPlayers; i++) {
 		const hand = state.hands[i];
+
 		for (let j = 0; j < hand.length; j++) {
 			const card = hand[j];
 			if (!card.clued) {
@@ -141,8 +144,8 @@ export function find_known_trash(state, playerIndex) {
 	/** @type {(suitIndex: number, rank: number, order: number) => boolean} */
 	const visible_elsewhere = (suitIndex, rank, order) => {
 		// Visible in someone else's hand or visible in the same hand (but only one is trash)
-		return visibleFind(state, state.ourPlayerIndex, suitIndex, rank, { ignore: [playerIndex] }).some(c => c.clued && c.order !== order) ||
-			visibleFind(state, state.ourPlayerIndex, suitIndex, rank).some(c => c.clued && c.order > order);
+		return visibleFind(state, playerIndex, suitIndex, rank, { ignore: [playerIndex] }).some(c => c.clued && c.order !== order) ||
+			visibleFind(state, playerIndex, suitIndex, rank).some(c => c.clued && c.order > order);
 	};
 
 	for (const card of hand) {
@@ -168,7 +171,8 @@ export function handLoaded(state, target) {
 
 /**
  * @param {Hand} hand
- * @param {{suitIndex: number, rank: number}[]} cards
+ * @param {BasicCard[]} cards
+ * @param {{ignore?: number[], hard?: boolean}} options
  */
 export function good_touch_elim(hand, cards, options = {}) {
 	for (const card of hand) {
@@ -257,7 +261,6 @@ export function update_hypo_stacks(state) {
 
 					good_touch_elim.push(card);
 					found_new_playable = true;
-					logger.debug(`found new playable ${Utils.logCard(card)}`);
 				}
 			}
 		}

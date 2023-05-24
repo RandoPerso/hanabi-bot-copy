@@ -1,8 +1,8 @@
 /**
  * @typedef {{symmetric?: boolean, infer?: boolean}} MatchOptions
- * @typedef {import('./../types.js').Clue} Clue
- * 
- * @typedef {{suitIndex: number, rank: number}} BasicCard
+ * @typedef {import('../types.js').BaseClue} BaseClue
+ * @typedef {import('../types.js').Clue} Clue
+ * @typedef {import('../types.js').BasicCard} BasicCard
  */
 
 /**
@@ -13,7 +13,7 @@ export class Card {
 	rank = -1;			// The rank of the card
 	order = -1;			// The ordinal number of the card
 
-	clues = /** @type {Omit<Clue, 'target'>[]} */ ([]);			// List of clues that have touched this card
+	clues = /** @type {BaseClue[]} */ ([]);			// List of clues that have touched this card
 	possible = /** @type {Card[]} */ ([]);						// All possibilities of the card (from positive/negative information)
 	inferred = /** @type {Card[]} */ ([]);						// All inferences of the card (from conventions)
 	old_inferred = /** @type {Card[] | undefined} */ (undefined);		// Only used when undoing a finesse
@@ -24,6 +24,8 @@ export class Card {
 	finessed = false;
 	chop_moved = false;
 	reset = false;			// Whether the card has previously lost all inferences
+	chop_when_first_clued = false;
+	superposition = false;	// Whether the card is currently in a superposition
 
 	reasoning = /** @type {number[]} */ ([]);		// The action indexes of when the card's possibilities/inferences were updated
 	reasoning_turn = /** @type {number[]} */ ([]);	// The game turns of when the card's possibilities/inferences were updated

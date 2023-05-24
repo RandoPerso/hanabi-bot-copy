@@ -10,14 +10,18 @@ import * as Utils from '../util.js';
  * @typedef {import('../types.js').ClueAction} ClueAction
  * @typedef {import('../types.js').DiscardAction} DiscardAction
  * @typedef {import('../types.js').TurnAction} TurnAction
+ * @typedef {import('../types.js').PlayAction} PlayAction
+ * @typedef {import('../types.js').PerformAction} PerformAction
  * @typedef {import('../types.js').WaitingConnection} WaitingConnection
  */
 
 export class State {
 	turn_count = 0;
 	clue_tokens = 8;
+	strikes = 0;
 	early_game = true;
 	rewindDepth = 0;
+	in_progress = false;
 
 	hands = /** @type {Hand[]} */ ([]);
 
@@ -30,6 +34,12 @@ export class State {
 
 	actionList = /** @type {Action[]} */ ([]);
 	last_actions = /** @type {Action[]} */ ([]);
+
+	/**
+	 * The orders of cards to ignore in the next play clue.
+	 * @type {number[]}
+	 */
+	next_ignore = [];
 
 	handle_action = handle_action;
 
@@ -111,7 +121,17 @@ export class State {
 
 	/**
 	 * @abstract
+	 * @param  {State} _state
+	 * @param  {PlayAction} _action
+	 */
+	interpret_play(_state, _action) {
+		throw new Error('must be implemented by subclass!');
+	}
+
+	/**
+	 * @abstract
      * @param {State} _state
+     * @returns {PerformAction}
      */
 	take_action(_state) {
 		throw new Error('must be implemented by subclass!');
@@ -127,15 +147,12 @@ export class State {
 	}
 
 	/**
-	 * Rewinds the state to a particular action index, while rewriting the given card to its known identity.
+	 * Rewinds the state to a particular action index, inserts the rewind action just before it and then replays all future moves.
      * @param {number} action_index
-     * @param {number} playerIndex		The player that drew the rewinded card.
-     * @param {number} order
-     * @param {number} suitIndex
-     * @param {number} rank
-     * @param {boolean} finessed 		Whether the card was played as a finesse.
+     * @param {Action} rewind_action	The rewind action to insert before the target action
+     * @param {boolean} [mistake] 		Whether the target action was a mistake
      */
-	rewind(action_index, playerIndex, order, suitIndex, rank, finessed) {
+	rewind(action_index, rewind_action, mistake = false) {
 		if (this.rewindDepth > 2) {
 			throw new Error('attempted to rewind too many times!');
 		}
@@ -145,43 +162,82 @@ export class State {
 		}
 		this.rewindDepth++;
 
-		logger.info(`card actually ${Utils.logCard({suitIndex, rank})}, rewinding to action_index ${action_index}`);
+		const pivotal_action = /** @type {ClueAction} */ (this.actionList[action_index]);
+		pivotal_action.mistake = mistake || this.rewindDepth > 1;
+		logger.warn(`Rewinding to before ${JSON.stringify(pivotal_action)} to insert ${JSON.stringify(rewind_action)}`);
+
 		const new_state = this.createBlank();
 		const history = this.actionList.slice(0, action_index);
 
-		logger.setLevel(logger.LEVELS.ERROR);
-
-		// Get up to speed
-		for (const action of history) {
-			new_state.handle_action(action, true);
-		}
-
-		logger.setLevel(logger.LEVELS.INFO);
+		logger.wrapLevel(logger.LEVELS.ERROR, () => {
+			// Get up to speed
+			for (const action of history) {
+				new_state.handle_action(action, true);
+			}
+		});
 
 		// Rewrite and save as a rewind action
-		const known_action = { type: 'rewind', order, playerIndex, suitIndex, rank };
-		new_state.handle_action(known_action, true);
-		logger.warn('Rewriting order', order, 'to', Utils.logCard({suitIndex, rank}));
-
-		const pivotal_action = this.actionList[action_index];
-		pivotal_action.mistake = finessed || this.rewindDepth > 1;
-		logger.info('pivotal action', pivotal_action);
+		new_state.handle_action(rewind_action, true);
 		new_state.handle_action(pivotal_action, true);
 
-		logger.setLevel(logger.LEVELS.ERROR);
+		logger.wrapLevel(logger.LEVELS.ERROR, () => {
+			// Redo all the following actions
+			const future = this.actionList.slice(action_index + 1);
+			for (const action of future) {
+				new_state.handle_action(action, true);
+			}
+		});
 
-		// Redo all the following actions
-		const future = this.actionList.slice(action_index + 1);
-		for (const action of future) {
-			new_state.handle_action(action, true);
-		}
-
-		logger.setLevel(logger.LEVELS.INFO);
+		logger.highlight('green', '------- REWIND COMPLETE -------');
 
 		// Overwrite state
 		Object.assign(this, new_state);
+		Utils.globalModify({ state: this });
+
 		this.rewindDepth = 0;
 		return true;
+	}
+
+	navigate(turn) {
+		logger.highlight('greenb', `------- NAVIGATING (turn ${turn}) -------`);
+
+		const new_state = this.createBlank();
+		Utils.globalModify({ state: new_state });
+
+		// Remove special actions from the action list (they will be added back in when rewinding)
+		const actionList = this.actionList.filter(action => action.type !== 'identify' && action.type !== 'ignore');
+
+		let turn_count = 0, action_index = 0;
+
+		// Don't log history
+		logger.wrapLevel(logger.LEVELS.ERROR, () => {
+			while (turn_count < turn - 1) {
+				const action = actionList[action_index];
+				new_state.handle_action(action, true);
+				action_index++;
+
+				if (action.type === 'turn') {
+					turn_count++;
+				}
+			}
+		});
+
+		// Log the previous turn and the 'turn' action leading to the desired turn
+		while (turn_count < turn) {
+			const action = actionList[action_index];
+			new_state.handle_action(action);
+			action_index++;
+
+			if (action.type === 'turn') {
+				turn_count++;
+			}
+		}
+
+		// Copy over the full game history
+		new_state.actionList = actionList;
+		Object.assign(this, new_state);
+
+		Utils.globalModify({ state: this });
 	}
 
 	/**
@@ -191,7 +247,7 @@ export class State {
 	 * 
 	 * The 'enableLogs' option causes all logs from the simulated state to be printed.
 	 * Otherwise, only errors are printed from the simulated state.
-     * @param {Omit<ClueAction, 'type'>} action
+     * @param {ClueAction} action
      * @param {{simulatePlayerIndex?: number, enableLogs?: boolean}} options
      */
 	simulate_clue(action, options = {}) {
@@ -201,12 +257,9 @@ export class State {
 			hypo_state.ourPlayerIndex = options.simulatePlayerIndex;
 		}
 
-		if (!options.enableLogs) {
-			logger.setLevel(logger.LEVELS.ERROR);
-		}
-
-		hypo_state.interpret_clue(hypo_state, action);
-		logger.setLevel(logger.LEVELS.INFO);
+		logger.wrapLevel(options.enableLogs ? logger.level : logger.LEVELS.ERROR, () => {
+			hypo_state.interpret_clue(hypo_state, action);
+		});
 
 		return hypo_state;
 	}

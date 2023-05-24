@@ -13,19 +13,36 @@ const conventions = { HGroup };
 let self;
 const tables = {};
 
-/** @type {State} */
-let state;
+let state = /** @type {State} */ ({});
+
+/** @type {boolean} */
+let gameStarted = false;
+
+const settings = {
+	convention: 'HGroup',
+	level: 1
+};
 
 export const handle = {
 	// Received when any message in chat is sent
 	chat: (data) => {
-		// We only care about private messages to us
-		if (data.recipient === self.username) {
+		// Sent in room
+		if (data.recipient === '' && data.room.startsWith('table')) {
+			if (data.msg.startsWith('/setall')) {
+				assignSettings(data, false);
+			}
+			else if (data.msg.startsWith('/leaveall')) {
+				Utils.sendCmd('tableLeave', { tableID: state.tableID });
+				gameStarted = false;
+			}
+		}
+		// Private messages to us
+		else if (data.recipient === self.username) {
 			// Invites the bot to a lobby (format: /join [password])
 			if (data.msg.startsWith('/join')) {
 				// Find the table with the user that invited us
 				for (const table of Object.values(tables)) {
-					if (!table.sharedReplay && table.players.includes(data.who)) {
+					if (!table.sharedReplay && (table.players.includes(data.who) || table.spectators.some(spec => spec.name === data.who))) {
 						if (table.running || table.players.length === 6) {
 							continue;
 						}
@@ -38,15 +55,15 @@ export const handle = {
 				}
 
 				// Table not found
-				Utils.sendChat(data.who, 'Could not join. Check that the room is not full and the game has not started.');
+				Utils.sendPM(data.who, 'Could not join. Check that the room is not full and the game has not started.');
 			}
 			// Readds the bot to a game (format: /rejoin)
 			else if (data.msg.startsWith('/rejoin')) {
 				// Find the table with the user that invited us
 				for (const table of Object.values(tables)) {
-					if (!table.sharedReplay && table.players.includes(data.who)) {
+					if (table && !table.sharedReplay && (table.players.includes(data.who) || table.spectators.some(spec => spec.name === data.who))) {
 						if (!table.players.includes(self.username)) {
-							Utils.sendChat(data.who, 'Could not join, as the bot was never a player in this room.');
+							Utils.sendPM(data.who, 'Could not join, as the bot was never a player in this room.');
 							return;
 						}
 
@@ -57,20 +74,33 @@ export const handle = {
 				}
 
 				// Table not found
-				Utils.sendChat(data.who, 'Could not rejoin, as you are not in a room.');
+				Utils.sendPM(data.who, 'Could not rejoin, as you are not in a room.');
 			}
 			// Kicks the bot from a game (format: /leave)
 			else if (data.msg.startsWith('/leave')) {
-				Utils.sendCmd('tableUnattend', { tableID: state.tableID });
+				Utils.sendCmd('tableLeave', { tableID: state.tableID });
+				gameStarted = false;
 			}
 			// Creates a new table (format: /create <name> <maxPlayers> <password>)
 			else if (data.msg.startsWith('/create')) {
 				const parts = data.msg.split(' ');
 				Utils.sendCmd('tableCreate', { name: parts[1], maxPlayers: Number(parts[2]), password: parts[3] });
 			}
-			// Starts the game (format: /start <tableId>)
+			// Starts the game (format: /start)
 			else if (data.msg.startsWith('/start')) {
-				Utils.sendCmd('tableStart', { tableID: Number(data.msg.slice(data.msg.indexOf(' ') + 1)) });
+				Utils.sendCmd('tableStart', { tableID: state.tableID });
+			}
+			// Restarts a game (format: /restart)
+			else if (data.msg.startsWith('/restart')) {
+				Utils.sendCmd('tableRestart', { tableID: state.tableID, hidePregame: true });
+			}
+			// Remakes a table (format: /remake)
+			else if (data.msg.startsWith('/remake')) {
+				Utils.sendCmd('tableRestart', { tableID: state.tableID, hidePregame: false });
+			}
+			// Displays or modifies the current settings (format: /settings [convention = 'HGroup'] [level = 1])
+			else if (data.msg.startsWith('/settings')) {
+				assignSettings(data, true);
 			}
 		}
 	},
@@ -94,8 +124,12 @@ export const handle = {
 
 		// If we are going first, we need to take an action now
 		if (state.ourPlayerIndex === 0 && state.turn_count === 0) {
-			setTimeout(() => state.take_action(state), 3000);
+			setTimeout(() => Utils.sendCmd('action', state.take_action(state)), 3000);
 		}
+	},
+	joined: (data) => {
+		const { tableID } = data;
+		state.tableID = tableID;
 	},
 	// Received at the beginning of the game, with information about the game
 	init: async (data) => {
@@ -103,13 +137,18 @@ export const handle = {
 		const variant = await getVariant(options.variantName);
 
 		// Initialize game state using convention set
-		const convention = process.env.MODE || 'HGroup';
-		state = new conventions[convention](tableID, playerNames, ourPlayerIndex, variant.suits);
+		state = new conventions[settings.convention](tableID, playerNames, ourPlayerIndex, variant.suits, settings.level);
 
 		Utils.globalModify({state});
 
 		// Ask the server for more info
 		Utils.sendCmd('getGameInfo2', { tableID: data.tableID });
+		gameStarted = true;
+		state.in_progress = true;
+	},
+	left: () => {
+		state.tableID = undefined;
+		gameStarted = false;
 	},
 	// Received when a table updates its information
 	table: (data) => {
@@ -132,3 +171,34 @@ export const handle = {
 	// Received when we first register a websocket
 	welcome: (data) => { self = data; },
 };
+
+function assignSettings(data, priv) {
+	const parts = data.msg.split(' ');
+
+	const reply = priv ? (msg) => Utils.sendPM(data.who, msg) : (msg) => Utils.sendChat(state.tableID, msg);
+
+	if (parts.length > 1) {
+		if (gameStarted) {
+			reply('Settings cannot be modified in the middle of a game.');
+		}
+		else {
+			if (conventions[parts[1]]) {
+				settings.convention = parts[1];
+
+				if (settings.convention === 'HGroup' && (parts.length === 2 || !isNaN(Number(parts[2])))) {
+					const level = Number(parts[2]) || 1;
+
+					if (level <= 0 || level > 5) {
+						Utils.sendPM(data.who, 'This bot can currently only play between levels 1 and 5.');
+					}
+					settings.level = Math.max(Math.min(level, 5), 1);
+				}
+			}
+			else {
+				reply(`Format is ${priv ? '/settings' : '/setall'} [convention=HGroup] [level=1]. For example, try '${priv ? '/settings' : '/setall'} HGroup 1'.`);
+			}
+		}
+	}
+	const settingsString = (settings.convention === 'HGroup') ? `H-Group level ${settings.level}` : 'Referential Sieve';
+	reply(`Currently playing with ${settingsString} conventions.`);
+}
