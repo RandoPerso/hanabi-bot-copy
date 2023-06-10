@@ -16,7 +16,7 @@ import * as Utils from '../util.js';
  */
 
 export class State {
-	turn_count = 0;
+	turn_count = 1;
 	clue_tokens = 8;
 	strikes = 0;
 	early_game = true;
@@ -34,6 +34,8 @@ export class State {
 
 	actionList = /** @type {Action[]} */ ([]);
 	last_actions = /** @type {(Action & {card?: Card})[]} */ ([]);
+
+	notes = /** @type {{turn: number, last: string, full: string}[]} */ ([]);
 
 	/**
 	 * The orders of cards to ignore in the next play clue.
@@ -98,7 +100,9 @@ export class State {
 	 * Returns a blank copy of the state, as if the game had restarted.
 	 */
 	createBlank() {
-		return new State(this.tableID, this.playerNames, this.ourPlayerIndex, this.suits, this.in_progress);
+		const newState = new State(this.tableID, this.playerNames, this.ourPlayerIndex, this.suits, this.in_progress);
+		newState.notes = this.notes;
+		return newState;
 	}
 
 
@@ -219,7 +223,7 @@ export class State {
 				action_index++;
 
 				if (action.type === 'turn') {
-					turn_count++;
+					turn_count = action.num + 1;
 				}
 			}
 		});
@@ -231,7 +235,7 @@ export class State {
 			action_index++;
 
 			if (action.type === 'turn') {
-				turn_count++;
+				turn_count = action.num + 1;
 			}
 		}
 
