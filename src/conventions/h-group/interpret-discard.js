@@ -155,7 +155,7 @@ export function interpret_discard(state, action, card) {
 		const previous_hand = previousState.hands[playerIndex];
 		const discarded_slot = previous_hand.indexOf(previous_hand.findOrder(discarded_card.order));
 		logger.info(`discarded ${Utils.logCard(discarded_card)} from slot ${discarded_slot}`);
-		const knownTrash = find_known_trash(previousState, playerIndex).filter(c => !c.clued);
+		const knownTrash = find_known_trash(previousState, playerIndex).filter(c => c.clued);
 		// Step 1: Find the correct card to discard.
 		// TODO: Currently, the bot filters out any unclued kt. Should that be allowed to positional discard?
 		let previousChopIndex;
@@ -175,7 +175,6 @@ export function interpret_discard(state, action, card) {
 				if ((search_player === state.ourPlayerIndex) || (search_player === playerIndex)) {
 					continue;
 				}
-				logger.info(search_player);
 				const other_card = state.hands[search_player][discarded_slot];
 				const playable_away = playableAway(state, other_card.suitIndex, other_card.rank);
 				const hypo_away = other_card.rank - (state.hypo_stacks[other_card.suitIndex] + 1);
