@@ -42,12 +42,8 @@ function remove_finesse(state, waiting_index) {
 	}
 
 	// Remove inference
-	if (connections[0]['type'] !== 'positional discard') {
+	if (connections[0].type !== 'positional discard') {
 		focused_card.subtract('inferred', [inference]);
-	} else {
-		focused_card.inferred = focused_card.old_inferred;
-		focused_card.old_inferred = undefined;
-		return;
 	}
 
 	// Update hypo stacks if the card is now playable

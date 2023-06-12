@@ -1,7 +1,10 @@
+import { LEVEL } from './h-constants.js';
 import { Card } from '../../basics/Card.js';
 import { find_chop } from './hanabi-logic.js';
+import { find_known_trash } from '../../basics/helper.js';
 import { isSaved, isTrash, playableAway, visibleFind, isBasicTrash } from '../../basics/hanabi-util.js';
 import logger from '../../logger.js';
+import * as Basics from '../../basics.js';
 import * as Utils from '../../util.js';
 // import { find_focus_possible } from './clue-interpretation/focus-possible.js';
 
@@ -76,6 +79,9 @@ function apply_unknown_sarcastic(state, sarcastic, playerIndex, suitIndex, rank)
 export function interpret_discard(state, action, card) {
 	const { order, playerIndex, rank, suitIndex, failed } = action;
 
+	const previousState = Utils.objClone(state);
+	Basics.onDiscard(state, action);
+
 	// End early game?
 	if (state.early_game && !action.failed &&										// Not bombed
 		!(card.clued && isSaved(state, playerIndex, suitIndex, rank, order)) && 	// Not clued card that is duplicated
@@ -144,59 +150,24 @@ export function interpret_discard(state, action, card) {
 
 	// Check for positional discard.
 	// Step 0: Ignore our own discards and bombs (positional misplay can come later).
-	if ((playerIndex !== state.ourPlayerIndex) && !action.failed) {
-		const discarded_card = Utils.objClone(card);
-		// Step 1: Recreate the hand BEFORE the discard happened.
-		// Note: Separate this into a separate function?
-		const previous_hand = Utils.objClone(state.hands[playerIndex]);
-		let discarded_slot = -1;
-		/*
-		// Remove the newly drawn card.
-		previous_hand.shift();
-		*/
-		// Cycle through the cards, comparing the discarded card's order to find where it belongs
-		for (let card_index = 0; card_index < previous_hand.length; card_index++) {
-			const previous_card = previous_hand[card_index];
-			logger.info(`comparing ${Utils.logCard(discarded_card)} (order ${discarded_card.order}) and ${Utils.logCard(previous_card)} (order ${previous_card.order})`);
-			if (order > previous_card.order) {
-				previous_hand.splice(card_index, 0, discarded_card);
-				discarded_slot = card_index;
-				break;
-			}
-		}
-		// If the card was never inserted, insert it at the end.
-		if (discarded_slot === -1) {
-			discarded_slot = previous_hand.length;
-			previous_hand.push(discarded_card);
-		}
-		logger.info(`inserted ${Utils.logCard(discarded_card)} into slot ${discarded_slot}`);
-		// Step 2: Compare the discarded card compared to the correct card to discard.
-		// Left-most clued trash, then chop.
-		let previousChopIndex = -1;
-		for (let i = 0; i < previous_hand.length; i++) {
-			const previous_card = previous_hand[i];
-			let inference = false;
-			if (!previous_card.clued) {
-				// TODO: Allow positional discard to hit clued cards in specific circumstances.
-				continue;
-			}
-			for (let j = 0; j < previous_card.inferred.length; j++) {
-				if (!isBasicTrash(state, previous_card.inferred[j].suitIndex, previous_card.inferred[j].rank)) {
-					inference = true;
-					break;
-				}
-			}
-			if (!inference) {
-				previousChopIndex = i;
-				logger.info(`found known trash in slot ${i} (${Utils.logCard(previous_hand[i])})`);
-				break;
-			}
-		}
-		if (previousChopIndex === -1) {
+	if (state.level >= LEVEL.POSITIONAL_DISCARD && (playerIndex !== state.ourPlayerIndex) && !action.failed) {
+		const discarded_card = card;
+		const previous_hand = previousState.hands[playerIndex];
+		const discarded_slot = previous_hand.indexOf(previous_hand.findOrder(discarded_card.order));
+		logger.info(`discarded ${Utils.logCard(discarded_card)} from slot ${discarded_slot}`);
+		const knownTrash = find_known_trash(previousState, playerIndex).filter(c => !c.clued);
+		// Step 1: Find the correct card to discard.
+		// TODO: Currently, the bot filters out any unclued kt. Should that be allowed to positional discard?
+		let previousChopIndex;
+		if (knownTrash.length > 0) {
+			previousChopIndex = previous_hand.indexOf(knownTrash[0]);
+			logger.info(`found known trash in slot ${previousChopIndex} (${Utils.logCard(previous_hand[previousChopIndex])})`);
+		} else {
 			previousChopIndex = find_chop(previous_hand);
 			logger.info(`no card found, using slot ${previousChopIndex} as chop`);
 		}
-		if (previousChopIndex !== discarded_slot) {
+		// Step 2: Check that the player discarded a card that is different than expected.
+		if ((previousChopIndex !== -1 ) && (previousChopIndex !== discarded_slot)) {
 			// Step 3: Check everyone else's hand to see if they have a playable card in that slot.
 			const possible = [];
 			for (let search_player = 0; search_player < state.numPlayers; search_player++) {
@@ -204,6 +175,7 @@ export function interpret_discard(state, action, card) {
 				if ((search_player === state.ourPlayerIndex) || (search_player === playerIndex)) {
 					continue;
 				}
+				logger.info(search_player);
 				const other_card = state.hands[search_player][discarded_slot];
 				const playable_away = playableAway(state, other_card.suitIndex, other_card.rank);
 				const hypo_away = other_card.rank - (state.hypo_stacks[other_card.suitIndex] + 1);
@@ -223,7 +195,7 @@ export function interpret_discard(state, action, card) {
 			}
 			if (possible.length === 0) {
 				// If no one has a playable, mark my card as the possible discarded.
-				logger.info(`could not find playable, assuming own hand`);
+				logger.warn(`could not find playable, assuming own hand`);
 				const possible_card = state.hands[state.ourPlayerIndex][discarded_slot];
 
 				possible_card.intersect('inferred', all_playable);
@@ -276,6 +248,7 @@ export function interpret_discard(state, action, card) {
 				}
 			}
 			if (connections.length > 0) {
+				logger.warn('addding connection!');
 				// Adds connections if there are any.
 				connections.reverse();
 				// @ts-ignore

@@ -59,7 +59,6 @@ export function handle_action(action, catchup = false) {
 			Object.assign(card, {suitIndex, rank});
 			logger.highlight('yellowb', `Turn ${this.turn_count}: ${playerName} ${failed ? 'bombs' : 'discards'} ${Utils.logCard(card)}`);
 
-			Basics.onDiscard(this, action);
 			this.interpret_discard(this, action, card);
 			this.last_actions[playerIndex] = Object.assign(action, { card });
 			break;

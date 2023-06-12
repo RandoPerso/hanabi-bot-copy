@@ -138,12 +138,10 @@ export function take_action(state) {
 		return { tableID, type: ACTION.PLAY, target: best_playable_card.order };
 	}
 
-	/*
 	// Discard known trash at high pace, low clues
-	if (trash_cards.length > 0 && getPace(state) > state.numPlayers * 2 && state.clue_tokens <= 3) {
+	if (state.level < LEVEL.POSITIONAL_DISCARD && trash_cards.length > 0 && getPace(state) > state.numPlayers * 2 && state.clue_tokens <= 3) {
 		return { tableID, type: ACTION.DISCARD, target: trash_cards[0].order };
 	}
-	*/
 
 	// Playable card with any priority
 	if (playable_cards.length > 0) {
@@ -185,7 +183,7 @@ export function take_action(state) {
 	}
 
 	// All known trash and end game*, positional discard*
-	if ((trash_cards.length === hand.length) && inEndgame(state)) {
+	if (state.level >= LEVEL.POSITIONAL_DISCARD && (trash_cards.length === hand.length) && inEndgame(state)) {
 		// Find immediate playables that are not on the hypo stacks already
 		const other_playables = [];
 		let chopIndex = -1;
