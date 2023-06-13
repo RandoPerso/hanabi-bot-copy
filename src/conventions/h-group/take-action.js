@@ -6,8 +6,7 @@ import { find_clues } from './clue-finder/clue-finder.js';
 import { find_stall_clue } from './clue-finder/stall-clues.js';
 import { find_chop, inEndgame } from './hanabi-logic.js';
 import { find_playables, find_known_trash, handLoaded } from '../../basics/helper.js';
-import { getPace } from '../../basics/hanabi-util.js';
-import { playableAway } from '../../basics/hanabi-util.js';
+import { getPace, visibleFind, playableAway } from '../../basics/hanabi-util.js';
 import logger from '../../logger.js';
 import * as Utils from '../../util.js';
 
@@ -42,7 +41,7 @@ export function take_action(state) {
 		}
 
 		// If there isn't a matching playable card in our hand, we should discard it to sarcastic for someone else
-		if (!playable_cards.some(c => c.matches(id.suitIndex, id.rank, { infer: true }))) {
+		if (!playable_cards.some(c => c.matches(id.suitIndex, id.rank, { infer: true }) && c.order !== card.order)) {
 			discards.push(card);
 		}
 	}
@@ -118,6 +117,14 @@ export function take_action(state) {
 
 	// Sarcastic discard to someone else
 	if (state.level >= LEVEL.SARCASTIC && discards.length > 0) {
+		const { suitIndex, rank } = discards[0].identity({ infer: true });
+		const duplicates = visibleFind(state, state.ourPlayerIndex, suitIndex, rank, { ignore: [state.ourPlayerIndex] }).filter(c => c.clued);
+
+		// If playing reveals duplicates are trash, playing is better for tempo in endgame
+		if (inEndgame(state) && duplicates.every(c => c.inferred.length === 0 || (c.inferred.length === 1 && c.inferred[0].matches(suitIndex, rank)))) {
+			return { tableID, type: ACTION.PLAY, target: discards[0].order };
+		}
+
 		return { tableID, type: ACTION.DISCARD, target: discards[0].order };
 	}
 
@@ -172,15 +179,6 @@ export function take_action(state) {
 	}
 
 	// Either there are no clue tokens or the best play clue doesn't meet MCVP
-
-	// TODO: Reconsider endgame stall more carefully
-	const endgame_stall = getPace(state) === 0 && state.clue_tokens > 0 &&
-		state.hypo_stacks.some((stack, index) => stack > state.play_stacks[index]);
-
-	// 8 clues or endgame
-	if (state.clue_tokens === 8 || endgame_stall) {
-		return Utils.clueToAction(find_stall_clue(state, 4, best_play_clue), state.tableID);
-	}
 
 	// All known trash and end game*, positional discard*
 	if (state.level >= LEVEL.POSITIONAL_DISCARD && (trash_cards.length === hand.length) && inEndgame(state)) {
@@ -259,8 +257,8 @@ export function take_action(state) {
 		}
 	}
 
-	// Discard clued known trash
-	if ((trash_cards.length > 0) && (trash_cards.some(c => c.clued))) {
+	// Discard clued known trash (not stalling)
+	if ((trash_cards.length > 0) && (trash_cards.some(c => c.clued)) && !inEndgame(state) && state.clue_tokens < 8) {
 		Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: trash_cards.filter(c => c.clued)[0].order });
 		return;
 	}
@@ -270,18 +268,37 @@ export function take_action(state) {
 		return urgent_actions[8][0];
 	}
 
-	// Locked hand and no good clues to give
-	if (state.hands[state.ourPlayerIndex].isLocked(state) && state.clue_tokens > 0) {
-		return Utils.clueToAction(find_stall_clue(state, 3, best_play_clue), state.tableID);
+	// Stalling situations
+	if (state.clue_tokens > 0) {
+		// 8 clues
+		if (state.clue_tokens === 8) {
+			return Utils.clueToAction(find_stall_clue(state, 4, best_play_clue), state.tableID);
+		}
+
+		// Locked hand
+		if (state.hands[state.ourPlayerIndex].isLocked(state)) {
+			return Utils.clueToAction(find_stall_clue(state, 3, best_play_clue), state.tableID);
+		}
+
+		// Endgame (and stalling is effective)
+		if (inEndgame(state) && state.hypo_stacks.some((stack, index) => stack > state.play_stacks[index])) {
+			return Utils.clueToAction(find_stall_clue(state, 2, best_play_clue), state.tableID);
+		}
+
+		// Early game
+		if (state.early_game) {
+			const clue = find_stall_clue(state, 1, best_play_clue);
+
+			if (clue !== undefined) {
+				return Utils.clueToAction(clue, state.tableID);
+			}
+		}
 	}
 
-	// Early game
-	if (state.early_game && state.clue_tokens > 0) {
-		const clue = find_stall_clue(state, 1, best_play_clue);
-
-		if (clue !== undefined) {
-			return Utils.clueToAction(clue, state.tableID);
-		}
+	// Discard clued known trash
+	if ((trash_cards.length > 0) && (trash_cards.some(c => c.clued))) {
+		Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: trash_cards.filter(c => c.clued)[0].order });
+		return;
 	}
 
 	return discard_chop(hand, tableID);
