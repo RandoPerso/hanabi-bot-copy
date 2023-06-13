@@ -1,12 +1,10 @@
 import { LEVEL } from './h-constants.js';
 import { Card } from '../../basics/Card.js';
 import { find_chop } from './hanabi-logic.js';
-import { find_known_trash } from '../../basics/helper.js';
 import { isSaved, isTrash, playableAway, visibleFind, isBasicTrash } from '../../basics/hanabi-util.js';
 import logger from '../../logger.js';
 import * as Basics from '../../basics.js';
 import * as Utils from '../../util.js';
-// import { find_focus_possible } from './clue-interpretation/focus-possible.js';
 
 /**
  * @typedef {import('../h-group.js').default} State
@@ -154,17 +152,17 @@ export function interpret_discard(state, action, card) {
 		const discarded_card = card;
 		const previous_hand = previousState.hands[playerIndex];
 		const discarded_slot = previous_hand.indexOf(previous_hand.findOrder(discarded_card.order));
-		logger.info(`discarded ${Utils.logCard(discarded_card)} from slot ${discarded_slot}`);
-		const knownTrash = find_known_trash(previousState, playerIndex).filter(c => c.clued);
+		logger.info(`discarded ${Utils.logCard(discarded_card)} from slot ${discarded_slot + 1}`);
+		const knownTrash = previous_hand.filter(card => card.clued && card.possible.every(p => isBasicTrash(previousState, p.suitIndex, p.rank)));
 		// Step 1: Find the correct card to discard.
 		// TODO: Currently, the bot filters out any unclued kt. Should that be allowed to positional discard?
 		let previousChopIndex;
 		if (knownTrash.length > 0) {
 			previousChopIndex = previous_hand.indexOf(knownTrash[0]);
-			logger.info(`found known trash in slot ${previousChopIndex} (${Utils.logCard(previous_hand[previousChopIndex])})`);
+			logger.info(`found known trash in slot ${previousChopIndex + 1} (${Utils.logCard(previous_hand[previousChopIndex])})`);
 		} else {
 			previousChopIndex = find_chop(previous_hand);
-			logger.info(`no card found, using slot ${previousChopIndex} as chop`);
+			logger.info(`no card found, using slot ${previousChopIndex + 1} as chop`);
 		}
 		// Step 2: Check that the player discarded a card that is different than expected.
 		if ((previousChopIndex !== -1 ) && (previousChopIndex !== discarded_slot)) {
