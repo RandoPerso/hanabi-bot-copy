@@ -140,7 +140,7 @@ export function find_known_trash(state, playerIndex) {
 	/** @type {(suitIndex: number, rank: number, order: number) => boolean} */
 	const visible_elsewhere = (suitIndex, rank, order) => {
 		// Visible in someone else's hand or visible in the same hand (but only one is trash)
-		return visibleFind(state, playerIndex, suitIndex, rank, { ignore: [playerIndex] }).some(c => c.clued && c.order !== order) ||
+		return visibleFind(state, playerIndex, suitIndex, rank, { ignore: [playerIndex] }).some(c => (c.clued || c.finessed) && c.order !== order) ||
 			visibleFind(state, playerIndex, suitIndex, rank).some(c => c.clued && c.order !== order && c.focused);
 	};
 
@@ -230,25 +230,18 @@ export function update_hypo_stacks(state) {
 					return !all_trash;
 				};
 
-				if (card.matches_inferences() && (delayed_playable(card.possible) || delayed_playable(card.inferred))) {
-					let suitIndex2, rank2;
-					if (card.suitIndex !== -1) {
-						({suitIndex: suitIndex2, rank: rank2} = card);
-					}
-					else if (card.possible.length === 1) {
-						({suitIndex: suitIndex2, rank: rank2} = card.possible[0]);
-					}
-					else if (card.inferred.length === 1) {
-						({suitIndex: suitIndex2, rank: rank2} = card.inferred[0]);
-					}
-					else {
+				if (card.matches_inferences() && (delayed_playable(card.possible) || delayed_playable(card.inferred) || (card.finessed && delayed_playable([card])))) {
+					const id = card.identity({ infer: true });
+					if (id === undefined) {
 						// Playable, but we don't know what card it is so we can't update hypo stacks
 						continue;
 					}
 
+					const { suitIndex, rank } = id;
+
 					// Extra check just to be sure
-					if (rank2 === state.hypo_stacks[suitIndex2] + 1) {
-						state.hypo_stacks[suitIndex2] = rank2;
+					if (rank === state.hypo_stacks[suitIndex] + 1) {
+						state.hypo_stacks[suitIndex] = rank;
 					}
 					else {
 						logger.error(`tried to add new playable card ${Utils.logCard(card)} but didn't match hypo stacks`);

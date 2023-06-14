@@ -81,11 +81,9 @@ export function interpret_discard(state, action, card) {
 	Basics.onDiscard(state, action);
 
 	// End early game?
-	if (state.early_game && !action.failed &&										// Not bombed
-		!(card.clued && isSaved(state, playerIndex, suitIndex, rank, order)) && 	// Not clued card that is duplicated
-		!card.possible.every(c => isBasicTrash(state, c.suitIndex, c.rank))) {		// Not known trash
-			logger.warn('ending early game from discard of', Utils.logCard(card));
-			state.early_game = false;
+	if (state.early_game && !action.failed && !card.clued) {
+		logger.warn('ending early game from discard of', Utils.logCard(card));
+		state.early_game = false;
 	}
 
 	// If bombed or the card doesn't match any of our inferences (and is not trash), rewind to the reasoning and adjust
