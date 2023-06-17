@@ -104,6 +104,9 @@ export function initConsole() {
 					case 'unattend':
 						Utils.sendCmd('tableUnattend', { tableID: state.tableID });
 						break;
+					case 'terminate':
+						Utils.sendCmd('tableTerminate', { tableID: state.tableID });
+						break;
 					default:
 						logger.warn('Command not recognized.');
 				}

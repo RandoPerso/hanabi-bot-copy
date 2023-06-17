@@ -18,6 +18,9 @@ import { globals } from './util.js';
 export function logCard(card) {
 	let suitIndex, rank, append;
 
+	if (card.suitIndex === -2) {
+		return '(unknown)';
+	}
 	if (card.suitIndex !== -1) {
 		({ suitIndex, rank } = card);
 	}
