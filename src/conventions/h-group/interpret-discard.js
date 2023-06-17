@@ -1,10 +1,11 @@
 import { LEVEL } from './h-constants.js';
 import { Card } from '../../basics/Card.js';
+import { isTrash, playableAway, visibleFind, isBasicTrash } from '../../basics/hanabi-util.js';
+import logger from '../../tools/logger.js';
+import { logCard } from '../../tools/log.js';
 import { find_chop } from './hanabi-logic.js';
-import { isSaved, isTrash, playableAway, visibleFind, isBasicTrash } from '../../basics/hanabi-util.js';
-import logger from '../../logger.js';
 import * as Basics from '../../basics.js';
-import * as Utils from '../../util.js';
+import * as Utils from '../../tools/util.js';
 
 /**
  * @typedef {import('../h-group.js').default} State
@@ -37,7 +38,7 @@ function find_sarcastic(hand, suitIndex, rank) {
  * @param {number} rank
  */
 function undo_hypo_stacks(state, playerIndex, suitIndex, rank) {
-	logger.info(`${state.playerNames[playerIndex]} discarded useful card ${Utils.logCard({suitIndex, rank})}, setting hypo stack ${rank - 1}`);
+	logger.info(`${state.playerNames[playerIndex]} discarded useful card ${logCard({suitIndex, rank})}, setting hypo stack ${rank - 1}`);
 	if (state.hypo_stacks[suitIndex] >= rank) {
 		state.hypo_stacks[suitIndex] = rank - 1;
 	}
@@ -82,13 +83,13 @@ export function interpret_discard(state, action, card) {
 
 	// End early game?
 	if (state.early_game && !action.failed && !card.clued) {
-		logger.warn('ending early game from discard of', Utils.logCard(card));
+		logger.warn('ending early game from discard of', logCard(card));
 		state.early_game = false;
 	}
 
 	// If bombed or the card doesn't match any of our inferences (and is not trash), rewind to the reasoning and adjust
 	if (!card.rewinded && (failed || (!card.matches_inferences() && !isTrash(state, state.ourPlayerIndex, card.suitIndex, card.rank, card.order)))) {
-		logger.info('all inferences', card.inferred.map(c => Utils.logCard(c)));
+		logger.info('all inferences', card.inferred.map(c => logCard(c)));
 		const action_index = card.reasoning.pop();
 		if (action_index !== undefined && state.rewind(action_index, { type: 'identify', order, playerIndex, suitIndex, rank }, card.finessed)) {
 			return;
@@ -110,8 +111,8 @@ export function interpret_discard(state, action, card) {
 				const sarcastic = find_sarcastic(state.hands[state.ourPlayerIndex], suitIndex, rank);
 
 				if (sarcastic.length === 1) {
-					const action_index = sarcastic[0].reasoning.pop();
-					if (action_index !== undefined && state.rewind(action_index, { type: 'identify', order: sarcastic[0].order, playerIndex: state.ourPlayerIndex, suitIndex, rank })) {
+					const action_index = sarcastic[0].drawn_index;
+					if (!sarcastic[0].rewinded && state.rewind(action_index, { type: 'identify', order: sarcastic[0].order, playerIndex: state.ourPlayerIndex, suitIndex, rank })) {
 						return;
 					}
 				}
@@ -129,7 +130,7 @@ export function interpret_discard(state, action, card) {
 						// The matching card must be the only possible option in the hand to be known sarcastic
 						if (sarcastic.length === 1) {
 							sarcastic[0].inferred = [new Card(suitIndex, rank)];
-							logger.info(`writing ${Utils.logCard({suitIndex, rank})} from sarcastic discard`);
+							logger.info(`writing ${logCard({suitIndex, rank})} from sarcastic discard`);
 						}
 						else {
 							apply_unknown_sarcastic(state, sarcastic, playerIndex, suitIndex, rank);
@@ -150,14 +151,14 @@ export function interpret_discard(state, action, card) {
 		const discarded_card = card;
 		const previous_hand = previousState.hands[playerIndex];
 		const discarded_slot = previous_hand.indexOf(previous_hand.findOrder(discarded_card.order));
-		logger.info(`discarded ${Utils.logCard(discarded_card)} from slot ${discarded_slot + 1}`);
+		logger.info(`discarded ${logCard(discarded_card)} from slot ${discarded_slot + 1}`);
 		const knownTrash = previous_hand.filter(card => card.clued && card.possible.every(p => isBasicTrash(previousState, p.suitIndex, p.rank)));
 		// Step 1: Find the correct card to discard.
 		// TODO: Currently, the bot filters out any unclued kt. Should that be allowed to positional discard?
 		let previousChopIndex;
 		if (knownTrash.length > 0) {
 			previousChopIndex = previous_hand.indexOf(knownTrash[0]);
-			logger.info(`found known trash in slot ${previousChopIndex + 1} (${Utils.logCard(previous_hand[previousChopIndex])})`);
+			logger.info(`found known trash in slot ${previousChopIndex + 1} (${logCard(previous_hand[previousChopIndex])})`);
 		} else {
 			previousChopIndex = find_chop(previous_hand);
 			logger.info(`no card found, using slot ${previousChopIndex + 1} as chop`);
@@ -177,7 +178,7 @@ export function interpret_discard(state, action, card) {
 
 				if ((playable_away === 0) && (hypo_away === 0) && !other_card.finessed) {
 					possible.push(search_player);
-					logger.info(`found immediate playable ${Utils.logCard(other_card)} in ${state.playerNames[search_player]}'s hand`);
+					logger.info(`found immediate playable ${logCard(other_card)} in ${state.playerNames[search_player]}'s hand`);
 				}
 			}
 			// Step 4: Generate all immediate playables.

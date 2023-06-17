@@ -2,8 +2,9 @@ import { CLUE } from '../../../constants.js';
 import { determine_focus } from '../hanabi-logic.js';
 import { find_connecting } from './connecting-cards.js';
 import { isCritical, playableAway, visibleFind } from '../../../basics/hanabi-util.js';
-import logger from '../../../logger.js';
-import * as Utils from '../../../util.js';
+import logger from '../../../tools/logger.js';
+import { logCard } from '../../../tools/log.js';
+import * as Utils from '../../../tools/util.js';
 
 /**
  * @typedef {import('../../h-group.js').default} State
@@ -36,7 +37,7 @@ function find_colour_focus(state, suitIndex, action) {
 	let connections = [];
 
 	// Try looking for a connecting card (other than itself)
-	const hypo_state = Utils.objClone(state);
+	const hypo_state = state.minimalCopy();
 	let already_connected = [focused_card.order];
 
 	let finesses = 0;
@@ -53,7 +54,7 @@ function find_colour_focus(state, suitIndex, action) {
 		if (type === 'known' && card.newly_clued && card.possible.length > 1 && focused_card.inferred.some(c => c.matches(suitIndex, next_playable_rank))) {
 			// Trying to use a newly 'known' connecting card, but the focused card could be that
 			// e.g. If 2 reds are clued with only r5 remaining, the focus should not connect to the other card as r6
-			logger.debug(`blocked connection - focused card could be ${Utils.logCard({suitIndex, rank: next_playable_rank})}`);
+			logger.debug(`blocked connection - focused card could be ${logCard({suitIndex, rank: next_playable_rank})}`);
 			break;
 		}
 		else if (type === 'finesse') {
@@ -70,7 +71,7 @@ function find_colour_focus(state, suitIndex, action) {
 		next_playable_rank++;
 
 		connections = connections.concat(connecting);
-		already_connected = already_connected.concat(connections.map(conn => conn.card.order));
+		already_connected = already_connected.concat(connecting.map(conn => conn.card.order));
 	}
 
 	// Our card could be the final rank that we can't find
@@ -121,8 +122,8 @@ function find_rank_focus(state, rank, action) {
 	const { focused_card, chop } = determine_focus(state.hands[target], list);
 
 	/** @type {FocusPossibility[]} */
-	let focus_possible = [];
-	let looksSave = false;
+	const focus_possible = [];
+	let looksSave = false, alwaysSave = false;
 
 	// Save clue on chop
 	if (chop) {
@@ -144,17 +145,20 @@ function find_rank_focus(state, rank, action) {
 			if (isCritical(state, suitIndex, rank) || save2) {
 				// Saving 2s or 5s will never cause a prompt or finesse.
 				if (save2 || rank === 5) {
-					focus_possible = focus_possible.filter(({ connections }) => !connections.some(conn => ['prompt', 'finesse'].includes(conn.type)));
+					alwaysSave = true;
 				}
-
 				focus_possible.push({ suitIndex, rank, save: true, connections: [] });
 				looksSave = true;
 			}
 		}
 	}
 
+	if (alwaysSave) {
+		return focus_possible;
+	}
+
+	// Play clue
 	for (let suitIndex = 0; suitIndex < state.suits.length; suitIndex++) {
-		// Play clue
 		let next_rank = state.play_stacks[suitIndex] + 1;
 
 		/** @type {Connection[]} */
@@ -165,7 +169,7 @@ function find_rank_focus(state, rank, action) {
 		}
 		else if (rank > next_rank) {
 			// Try looking for all connecting cards
-			const hypo_state = Utils.objClone(state);
+			const hypo_state = state.minimalCopy();
 			let already_connected = [focused_card.order];
 
 			let finesses = 0;
