@@ -1,7 +1,6 @@
 import { CLUE, ACTION } from '../../constants.js';
 import { LEVEL } from './h-constants.js';
 import { find_chop } from './hanabi-logic.js';
-import { handLoaded } from '../../basics/helper.js';
 import { card_value } from './clue-finder/clue-safe.js';
 import { playableAway, inStartingHand } from '../../basics/hanabi-util.js';
 import { cardTouched } from '../../variants.js';
@@ -212,9 +211,9 @@ export function find_urgent_actions(state, play_clues, save_clues, fix_clues, pl
 		// (play) (give play if 2+ clues)
 		// [other, save only] [other, play/trash fix over save] [all other fixes]
 		// (give play if < 2 clues) [early saves]
-		if (save_clues[target] !== undefined || state.hands[target].isLocked(state)) {
+		if (save_clues[target] !== undefined || state.hands[target].isLocked()) {
 			// They already have a playable or trash (i.e. early save)
-			if (handLoaded(state, target)) {
+			if (state.hands[target].isLoaded()) {
 				if (save_clues[target] !== undefined) {
 					urgent_actions[8].push(Utils.clueToAction(save_clues[target], state.tableID));
 				}
@@ -234,18 +233,22 @@ export function find_urgent_actions(state, play_clues, save_clues, fix_clues, pl
 				let remainder_boost = 0;
 
 				// If we're going to give a save clue, we shouldn't penalize the play clue's remainder if the save clue's remainder is also bad
+				// Prioritize cm-type saves over plays?
 				if (save_clues[target] !== undefined) {
 					const saved_hand = Utils.objClone(state.hands[target]);
 					for (const card of saved_hand) {
 						if (cardTouched(card, state.suits, save_clues[target])) {
 							card.clued = true;
 						}
+						else if (save_clues[target].cm.some(c => c.order === card.order)) {
+							card.chop_moved = true;
+						}
 					}
 					const new_chop = saved_hand[find_chop(saved_hand)];
-					remainder_boost = new_chop ? card_value(state, new_chop) * 0.2 : 0;
+					remainder_boost = new_chop ? card_value(state, new_chop) * 0.2 : 3;
 				}
 
-				const play_over_save = find_play_over_save(state, target, play_clues.flat(), state.hands[target].isLocked(state), remainder_boost);
+				const play_over_save = find_play_over_save(state, target, play_clues.flat(), state.hands[target].isLocked(), remainder_boost);
 				if (play_over_save !== undefined) {
 					urgent_actions[i === 1 ? 2 : 6].push(play_over_save);
 					continue;
@@ -328,6 +331,14 @@ export function determine_playable_card(state, playable_cards) {
 		// Part of a finesse
 		if (card.finessed) {
 			priorities[0].push(card);
+			continue;
+		}
+
+		// Blind playing chop moved cards should be a last resort with < 2 strikes
+		if (card.chop_moved && !card.clued) {
+			if (state.strikes !== 2) {
+				priorities[5].push(card);
+			}
 			continue;
 		}
 

@@ -21,6 +21,13 @@ import * as Utils from '../../../tools/util.js';
  * @typedef {import('../../../types.js').Connection} Connection
  */
 
+
+/**
+ * @param {State} state
+ * @param {number} playerIndex
+ * @param {number} suitIndex
+ * @param {number} rank
+ */
 function infer_elim(state, playerIndex, suitIndex, rank) {
 	// We just learned about the card
 	if (playerIndex === state.ourPlayerIndex) {
@@ -86,7 +93,7 @@ function apply_good_touch(state, action) {
 				card.subtract('inferred', bad_touch);
 
 				if (card.inferred.length === 1) {
-					infer_elim(state, target, card.inferred[0].suitIndex, card.inferred[0].rank)
+					infer_elim(state, target, card.inferred[0].suitIndex, card.inferred[0].rank);
 				}
 			}
 
@@ -125,6 +132,8 @@ function apply_good_touch(state, action) {
  * @param {ClueAction} action
  */
 export function interpret_clue(state, action) {
+	const prev_state = state.minimalCopy();
+
 	const { clue, giver, list, target, mistake = false, ignoreStall = false } = action;
 	const { fix, layered_reveal } = apply_good_touch(state, action);
 
@@ -160,7 +169,7 @@ export function interpret_clue(state, action) {
 	}
 
 	// Check if the giver was in a stalling situation
-	if (!ignoreStall && stalling_situation(state, action)) {
+	if (!ignoreStall && stalling_situation(state, action, prev_state)) {
 		logger.info('stalling situation');
 		update_hypo_stacks(state);
 		return;
@@ -243,8 +252,7 @@ export function interpret_clue(state, action) {
 						continue;
 					}
 
-					const looksDirect =
-						focused_card.newly_clued && (											// Focus must be newly clued
+					const looksDirect = focused_card.identity({ symmetric: true }) === undefined && (		// Focus must be unknown AND
 						action.clue.type === CLUE.COLOUR ||										// Colour clue always looks direct
 						state.hypo_stacks.some(stack => stack + 1 === action.clue.value) ||		// Looks like a play
 						focus_possible.some(fp => fp.save));									// Looks like a save
@@ -278,8 +286,7 @@ export function interpret_clue(state, action) {
 		}
 		// Someone else is the clue target, so we know exactly what card it is
 		else if (!isBasicTrash(state, focused_card.suitIndex, focused_card.rank)) {
-			const looksDirect =
-				focused_card.newly_clued && (											// Focused card must be newly clued
+			const looksDirect = focused_card.identity({ symmetric: true }) === undefined && (	// Focused card must be unknown AND
 				action.clue.type === CLUE.COLOUR ||										// Colour clue always looks direct
 				state.hypo_stacks.some(stack => stack + 1 === action.clue.value) ||		// Looks like a play
 				focus_possible.some(fp => fp.save));									// Looks like a save
@@ -396,7 +403,7 @@ function assign_connections(state, connections, suitIndex) {
 		}
 
 		if (hidden) {
-			const playable_identities = hypo_stacks.map((stack_rank, index) => { return { suitIndex: index, rank: stack_rank + 1 }});
+			const playable_identities = hypo_stacks.map((stack_rank, index) => { return { suitIndex: index, rank: stack_rank + 1 }; });
 			card.intersect('inferred', playable_identities);
 
 			if (card.identity() !== undefined) {
