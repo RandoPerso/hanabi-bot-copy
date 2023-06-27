@@ -78,7 +78,7 @@ function apply_unknown_sarcastic(state, sarcastic, playerIndex, suitIndex, rank)
 export function interpret_discard(state, action, card) {
 	const { order, playerIndex, rank, suitIndex, failed } = action;
 
-	const previousState = Utils.objClone(state);
+	const previousState = state.minimalCopy();
 	Basics.onDiscard(state, action);
 
 	// End early game?
