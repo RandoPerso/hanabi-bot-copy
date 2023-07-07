@@ -27,7 +27,7 @@ function remove_finesse(state, waiting_index) {
 			continue;
 		}
 
-		if (type === 'finesse' || type === 'positional discard') {
+		if (type === 'finesse') {
 			card.finessed = false;
 		}
 
@@ -41,10 +41,7 @@ function remove_finesse(state, waiting_index) {
 		}
 	}
 
-	// Remove inference
-	if (connections[0].type !== 'positional discard') {
-		focused_card.subtract('inferred', [inference]);
-	}
+	focused_card.subtract('inferred', [inference]);
 
 	// Update hypo stacks if the card is now playable
 	if (focused_card.inferred.length === 1) {
@@ -71,7 +68,7 @@ export function update_turn(state, action) {
 	const demonstrated = [];
 
 	for (let i = 0; i < state.waiting_connections.length; i++) {
-		const { connections, conn_index = 0, focused_card, inference, giver, action_index, ambiguousPassback } = state.waiting_connections[i];
+		const { connections, conn_index = 0, focused_card, inference, possible, giver, action_index, ambiguousPassback } = state.waiting_connections[i];
 		const { type, reacting, card: old_card } = connections[conn_index];
 		logger.info(`waiting for connecting ${logCard(old_card)} (${state.playerNames[reacting]}) for inference ${logCard(inference)}`);
 
@@ -107,14 +104,22 @@ export function update_turn(state, action) {
 					}
 				}
 				else if (type === 'positional discard') {
-					// If positional discard wasn't played, they saw a different playable
-					logger.info(`${state.playerNames[reacting]} didn't play into positional discard`);
-					card.inferred = card.old_inferred;
-					card.old_inferred = undefined;
-					connections.shift();
-					if (connections.length == 0) {
-						// That was the last person with a playable, the positional discard is to us.
-						to_remove.push(i);
+					if (connections.length === 1 && state.last_actions[reacting].card?.finessed) {
+						logger.info(`${state.playerNames[reacting]} played into other finesse, continuing to wait`);
+					} else {
+						// If positional discard wasn't played, they saw a different playable
+						logger.warn(`${state.playerNames[reacting]} didn't play into positional discard`);
+						card.inferred = card.old_inferred;
+						card.finessed = false;
+						card.old_inferred = undefined;
+						connections.shift();
+						// Add inferences
+						if (connections.length === 0) {
+							// That was the last person with a playable, the positional discard is to us.
+							focused_card.intersect('inferred', possible);
+							focused_card.finessed = true;
+							to_remove.push(i);
+						}
 					}
 				}
 				else if (state.last_actions[reacting].type === 'discard') {
@@ -137,7 +142,6 @@ export function update_turn(state, action) {
 						if (connections.length > 0) {
 							remove_finesse(state, i);
 						}
-						to_remove.push(i);
 					}
 					// Finesses demonstrate that a card must be playable and not save
 					else if (type === 'finesse') {

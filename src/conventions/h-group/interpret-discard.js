@@ -152,7 +152,7 @@ export function interpret_discard(state, action, card) {
 		const previous_hand = previousState.hands[playerIndex];
 		const discarded_slot = previous_hand.indexOf(previous_hand.findOrder(discarded_card.order));
 		logger.info(`discarded ${logCard(discarded_card)} from slot ${discarded_slot + 1}`);
-		const knownTrash = previous_hand.filter(card => card.clued && card.possible.every(p => isBasicTrash(previousState, p.suitIndex, p.rank)));
+		const knownTrash = previous_hand.filter(card => card.clued && card.inferred.every(p => isBasicTrash(previousState, p.suitIndex, p.rank)));
 		// Step 1: Find the correct card to discard.
 		// TODO: Currently, the bot filters out any unclued kt. Should that be allowed to positional discard?
 		let previousChopIndex;
@@ -189,10 +189,21 @@ export function interpret_discard(state, action, card) {
 					all_playable.push({suitIndex: stackIndex, rank: state.play_stacks[stackIndex]+1});
 				}
 			}
+			if (all_playable.length === 0) {
+				logger.warn(`impossible positional discard for nothing! assuming nothing else.`);
+				return;
+			}
 			if (possible.length === 0) {
 				// If no one has a playable, mark my card as the possible discarded.
 				logger.warn(`could not find playable, assuming own hand`);
 				const possible_card = state.hands[state.ourPlayerIndex][discarded_slot];
+				if (possible_card.finessed) {
+					logger.warn(`impossible positional discard onto a finessed card! assuming nothing else.`);
+					return;
+				} else if (possible_card.inferred.length <= 1) {
+					logger.warn(`card lacks enough inferences for a positional discard! assuming nothing else.`);
+					return;
+				}
 
 				possible_card.intersect('inferred', all_playable);
 				possible_card.finessed = true;
@@ -212,8 +223,10 @@ export function interpret_discard(state, action, card) {
 			}
 			logger.info(`positional order is ${last_player_order.map(c => state.playerNames[c])}`);
 			logger.info('ordering hands');
+			// TODO: Remove the connections array, it's no longer necessary.
 			const connections = [];
 			let after_search = true;
+			let connected = false;
 			for (let other_index = 0; other_index < last_player_order.length; other_index++) {
 				const search_index = last_player_order[other_index];
 				if (search_index == state.ourPlayerIndex) {
@@ -226,20 +239,28 @@ export function interpret_discard(state, action, card) {
 				if (possible.includes(search_index)) {
 					logger.info(`found immediate playable in ${state.playerNames[search_index]}'s hand`);
 					const possible_card = state.hands[search_index][discarded_slot];
-
+					if (possible_card.finessed) {
+						logger.warn('card is finessed! impossible positional discard target.');
+						continue;
+					}
 					if (after_search) {
 						// Someone after us has a playable, end search
 						possible_card.intersect('inferred', all_playable);
+						state.hypo_stacks[possible_card.suitIndex] = possible_card.rank;
 						possible_card.finessed = true;
 						logger.info(`playble card found after us, ending search`);
 						return;
 					} else {
 						// Someone before us has a playable, we need to wait for them
-						possible_card.old_inferred = Utils.objClone(possible_card.inferred);
-						possible_card.intersect('inferred', all_playable);
-						possible_card.finessed = true;
+						if (!connected) {
+							// This is the last player before us who could react, we assume the positional discard is on them.
+							possible_card.old_inferred = Utils.objClone(possible_card.inferred);
+							possible_card.intersect('inferred', all_playable);
+							possible_card.finessed = true;
+							connected = true;
+						}
 						const connection = {type: 'positional discard', reacting: search_index, card: possible_card};
-						connections.push(connection);
+						connections.unshift(connection);
 					}
 				}
 			}
@@ -248,7 +269,7 @@ export function interpret_discard(state, action, card) {
 				// Adds connections if there are any.
 				connections.reverse();
 				// @ts-ignore
-				state.waiting_connections.push({ connections, focused_card: state.hands[state.ourPlayerIndex][discarded_slot], inference: { suitIndex: -2, rank: -2 } });
+				state.waiting_connections.push({ connections, focused_card: state.hands[state.ourPlayerIndex][discarded_slot], inference: { suitIndex: -2, rank: -2 }, possible: all_playable });
 			} else {
 				state.hands[state.ourPlayerIndex][discarded_slot].intersect('inferred', all_playable);
 				state.hands[state.ourPlayerIndex][discarded_slot].finessed = true;

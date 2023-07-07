@@ -85,6 +85,7 @@ import { Card } from './basics/Card.js';
  * @property {number} [conn_index]
  * @property {Card} focused_card
  * @property {{suitIndex: number, rank: number}} inference
+ * @property {{suitIndex: number, rank: number}[]} [possible]
  * @property {number} action_index
  * @property {boolean} [ambiguousPassback]
  * 

@@ -302,15 +302,13 @@ export function take_action(state) {
 			logger.info(`discarding for ${logCard(card_identity)} in ${state.playerNames[chosen_card[1]]}'s hand`);
 			card_identity.finessed = true;
 			// Give the positional discard
-			Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: hand[chosen_card[0]].order });
-			return;
+			return { tableID, type: ACTION.DISCARD, target: hand[chosen_card[0]].order };
 		}
 	}
 
 	// Discard clued known trash (not stalling)
 	if ((trash_cards.length > 0) && (trash_cards.some(c => c.clued)) && !inEndgame(state) && state.clue_tokens < 8) {
-		Utils.sendCmd('action', { tableID, type: ACTION.DISCARD, target: trash_cards.filter(c => c.clued)[0].order });
-		return;
+		return { tableID, type: ACTION.DISCARD, target: trash_cards.filter(c => c.clued)[0].order };
 	}
 
 	// Early save
