@@ -47,6 +47,8 @@ export function handle_action(action, catchup = false) {
 
 			// Assign the card's identity if it isn't already known
 			Object.assign(card, {suitIndex, rank});
+			card.intersect('possible', [{ suitIndex, rank }]);
+
 			logger.highlight('yellowb', `Turn ${this.turn_count}: ${logAction(action)}`);
 
 			this.interpret_discard(this, action, card);
@@ -114,6 +116,8 @@ export function handle_action(action, catchup = false) {
 
 			// Assign the card's identity if it isn't already known
 			Object.assign(card, {suitIndex, rank});
+			card.intersect('possible', [{ suitIndex, rank }]);
+
 			logger.highlight('yellowb', `Turn ${this.turn_count}: ${logAction(action)}`);
 
 			this.interpret_play(this, action);
@@ -121,15 +125,20 @@ export function handle_action(action, catchup = false) {
 			break;
 		}
 		case 'identify': {
-			const { order, playerIndex, suitIndex, rank } = action;
+			const { order, playerIndex, suitIndex, rank, infer = false } = action;
 
 			const card = this.hands[playerIndex].findOrder(order);
 			if (card === undefined) {
 				throw new Error('Could not find card to rewrite!');
 			}
 			logger.info(`identifying card with order ${order} as ${logCard({ suitIndex, rank })}`);
-			Object.assign(card, { suitIndex, rank });
-			card.rewinded = true;
+			if (!infer) {
+				Object.assign(card, { suitIndex, rank });
+				card.rewinded = true;
+			}
+			else {
+				card.intersect('inferred', [{ suitIndex, rank }]);
+			}
 			break;
 		}
 		case 'ignore': {

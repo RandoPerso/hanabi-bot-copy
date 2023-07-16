@@ -15,7 +15,6 @@ export class Card {
 	rank = -1;			// The rank of the card
 	order = -1;			// The ordinal number of the card
 
-
 	clues = /** @type {BaseClue[]} */ ([]);			// List of clues that have touched this card
 	possible = /** @type {Card[]} */ ([]);						// All possibilities of the card (from positive/negative information)
 	inferred = /** @type {Card[]} */ ([]);						// All inferences of the card (from conventions)
@@ -44,9 +43,7 @@ export class Card {
      * @param {Partial<Card>} additions
      */
 	constructor(suitIndex, rank, additions = {}) {
-		/** @type {number} */
 		this.suitIndex = suitIndex;
-		/** @type {number} */
 		this.rank = rank;
 
 		Object.assign(this, additions);
@@ -74,6 +71,10 @@ export class Card {
 		return new_card;
 	}
 
+	raw() {
+		return { suitIndex: this.suitIndex, rank: this.rank };
+	}
+
 	/**
 	 * Returns the identity of the card (if known/inferred).
 	 * 
@@ -83,13 +84,13 @@ export class Card {
 	 * @param {MatchOptions} options
 	 */
 	identity(options = {}) {
-		if (this.possible?.length === 1) {
+		if (this.possible.length === 1) {
 			return this.possible[0];
 		}
-		else if (!options.symmetric && this.suitIndex !== -1) {
+		else if (!options.symmetric && this.suitIndex !== -1 && this.rank !== -1) {
 			return this;
 		}
-		else if (options.infer && this.inferred?.length === 1) {
+		else if (options.infer && this.inferred.length === 1) {
 			return this.inferred[0];
 		}
 		return;
@@ -116,7 +117,7 @@ export class Card {
 	 * Returns true if the card has only 1 possibility or the card is unknown (i.e. in our hand). 
 	 */
 	matches_inferences() {
-		return this.suitIndex === -1 || this.possible.length === 1 || this.inferred.some(c => c.matches(this.suitIndex, this.rank));
+		return this.identity() === undefined || this.possible.length === 1 || this.inferred.some(c => c.matches(this.suitIndex, this.rank));
 	}
 
 	/**
@@ -140,12 +141,12 @@ export class Card {
 	/**
 	 * Sets the inferences/possibilities to the union of the existing field and the provided array of cards.
      * @param {'possible' | 'inferred'} type
-     * @param {Card[]} cards
+     * @param {BasicCard[]} cards
      */
 	union(type, cards) {
-		for (const card of cards) {
-			if (!this[type].some(c => c.matches(card.suitIndex, card.rank))) {
-				this[type].push(card);
+		for (const { suitIndex, rank } of cards) {
+			if (!this[type].some(c => c.matches(suitIndex, rank))) {
+				this[type].push(new Card(suitIndex, rank));
 			}
 		}
 	}

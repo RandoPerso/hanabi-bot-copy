@@ -30,7 +30,7 @@ export function find_clue_value(clue_result) {
 	const { finesses, new_touched, playables, bad_touch, elim, remainder } = clue_result;
 
 	// Touching 1 card is much better than touching none, but touching more cards is only marginally better
-	const new_touched_value = (new_touched >= 1) ? 0.5 + 0.1 * (new_touched - 1) : 0;
+	const new_touched_value = (new_touched >= 1) ? 0.51 + 0.1 * (new_touched - 1) : 0;
 	return 0.5*(finesses + playables.length) + new_touched_value + 0.01*elim - 1*bad_touch - 0.2*remainder;
 }
 
@@ -169,12 +169,12 @@ export function order_1s(state, cards) {
 	return unknown_1s.sort((c1, c2) => {
 		const [c1_start, c2_start] = [c1, c2].map(c => inStartingHand(state, c));
 		// c1 is chop focus
-		if (c1_start && c1.chop_when_first_clued) {
+		if (c1.chop_when_first_clued) {
 			return -1;
 		}
 
 		// c2 is chop focus
-		if (c2_start && c2.chop_when_first_clued) {
+		if (c2.chop_when_first_clued) {
 			return 1;
 		}
 

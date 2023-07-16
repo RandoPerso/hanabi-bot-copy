@@ -6,7 +6,7 @@ import { stalling_situation } from './interpret-stall.js';
 import { determine_focus } from '../hanabi-logic.js';
 import { find_focus_possible } from './focus-possible.js';
 import { find_own_finesses } from './connecting-cards.js';
-import { bad_touch_possibilities, update_hypo_stacks, good_touch_elim } from '../../../basics/helper.js';
+import { bad_touch_possibilities, update_hypo_stacks, recursive_elim } from '../../../basics/helper.js';
 import { isBasicTrash, isTrash, playableAway, visibleFind } from '../../../basics/hanabi-util.js';
 import { cardCount } from '../../../variants.js';
 
@@ -73,6 +73,7 @@ function apply_good_touch(state, action) {
 	if (target === state.ourPlayerIndex) {
 		for (const card of state.hands[target]) {
 			if (card.finessed && had_inferences.some(({ order }) => order === card.order) && card.inferred.length === 0) {
+				// TODO: Possibly try rewinding older reasoning until rewind works?
 				const action_index = list.includes(card.order) ? card.reasoning.at(-2) : card.reasoning.pop();
 				if (state.rewind(action_index, { type: 'finesse', list, clue: action.clue })) {
 					return { layered_reveal: true };
@@ -88,15 +89,22 @@ function apply_good_touch(state, action) {
 	// Recursively deduce information until no new information is learned
 	do {
 		bad_touch_len = bad_touch.length;
+		const reduced_inferences = [];
+
 		for (const card of state.hands[target]) {
 			if (card.inferred.length > 1 && (card.clued || card.chop_moved)) {
 				card.subtract('inferred', bad_touch);
-
-				if (card.inferred.length === 1) {
-					infer_elim(state, target, card.inferred[0].suitIndex, card.inferred[0].rank);
-				}
+				reduced_inferences.push(card);
 			}
+		}
 
+		for (const card of reduced_inferences) {
+			if (card.inferred.length === 1) {
+				infer_elim(state, target, card.inferred[0].suitIndex, card.inferred[0].rank);
+			}
+		}
+
+		for (const card of state.hands[target]) {
 			// Check for fix on retouched cards
 			if (list.includes(card.order) && !card.newly_clued) {
 				// Lost all inferences, revert to good touch principle (must not have been known trash)
@@ -118,6 +126,9 @@ function apply_good_touch(state, action) {
 				}
 			}
 		}
+
+		state.hands[target].refresh_links();
+
 		bad_touch = bad_touch_possibilities(state, giver, target, bad_touch);
 	}
 	while (bad_touch_len !== bad_touch.length);
@@ -220,15 +231,15 @@ export function interpret_clue(state, action) {
 					assign_connections(state, connections, suitIndex);
 				}
 
-				// Only one inference, we can update hypo stacks
-				if (matched_inferences.length === 1 && (connections.length === 0 || !['prompt', 'finesse'].includes(connections[0].type))) {
-					team_elim(state, focused_card, giver, target, suitIndex, rank);
-				}
-
 				// Multiple inferences, we need to wait for connections
 				if (connections.length > 0 && connections.some(conn => ['prompt', 'finesse'].includes(conn.type))) {
 					state.waiting_connections.push({ connections, focused_card, inference: { suitIndex, rank }, giver, action_index: this.actionList.length - 1 });
 				}
+			}
+
+			// Only one inference, we can update hypo stacks
+			if (matched_inferences.length === 1 && (connections.length === 0 || !['prompt', 'finesse'].includes(connections[0].type))) {
+				team_elim(state, focused_card, giver, target, suitIndex, rank);
 			}
 		}
 	}
@@ -358,8 +369,6 @@ export function interpret_clue(state, action) {
  */
 function team_elim(state, focused_card, giver, target, suitIndex, rank) {
 	for (let i = 0; i < state.numPlayers; i++) {
-		const hand = state.hands[i];
-
 		// Giver cannot elim own cards unless all identities can be seen
 		if (i === giver) {
 			const count = state.discard_stacks[suitIndex][rank - 1] + (state.play_stacks[suitIndex] >= rank ? 1 : 0) + visibleFind(state, giver, suitIndex, rank).length;
@@ -370,8 +379,8 @@ function team_elim(state, focused_card, giver, target, suitIndex, rank) {
 
 		// Target can elim only if inference is known, everyone else can elim
 		if (i !== target || focused_card.inferred.length === 1) {
-			// Don't elim on the focused card
-			good_touch_elim(hand, [{ suitIndex, rank }], {ignore: [focused_card.order], hard: true});
+			// Don't elim on the focused card, but hard elim every other card
+			recursive_elim(state, i, suitIndex, rank, {ignore: [focused_card.order], hard: true });
 		}
 	}
 }
@@ -387,7 +396,7 @@ function assign_connections(state, connections, suitIndex) {
 	const hypo_stacks = state.hypo_stacks.slice();
 
 	for (const connection of connections) {
-		const { type, reacting, self, hidden, card: conn_card } = connection;
+		const { type, reacting, self, hidden, card: conn_card, known } = connection;
 		// The connections can be cloned, so need to modify the card directly
 		const card = state.hands[reacting].findOrder(conn_card.order);
 
@@ -425,20 +434,20 @@ function assign_connections(state, connections, suitIndex) {
 				card.union('inferred', [new Card(suitIndex, next_rank)]);
 			}
 			else {
-				card.inferred = [new Card(suitIndex, next_rank)];
+				if (!(type === 'playable' && !known)) {
+					card.inferred = [new Card(suitIndex, next_rank)];
+				}
 				card.superposition = true;
 			}
 			next_rank++;
 		}
 
 		// Updating notes not on our turn
+		// There might be multiple possible inferences on the same card from a self component
 		// TODO: Examine why this originally had self only?
-		if (self || true) {
-			// There might be multiple possible inferences on the same card from a self component
-			if (card.reasoning.at(-1) !== state.actionList.length - 1) {
-				card.reasoning.push(state.actionList.length - 1);
-				card.reasoning_turn.push(state.turn_count);
-			}
+		if (card.old_inferred.length > card.inferred.length && card.reasoning.at(-1) !== state.actionList.length - 1) {
+			card.reasoning.push(state.actionList.length - 1);
+			card.reasoning_turn.push(state.turn_count);
 		}
 	}
 }

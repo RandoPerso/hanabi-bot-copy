@@ -45,7 +45,7 @@ function find_colour_focus(state, suitIndex, action) {
 	while (next_playable_rank < state.max_ranks[suitIndex]) {
 		// Note that a colour clue always looks direct
 		const ignoreOrders = already_connected.concat(state.next_ignore[next_playable_rank - state.play_stacks[suitIndex] - 1] ?? []);
-		const looksDirect = focused_card.identity({ symmetric: true}) === undefined;
+		const looksDirect = focused_card.identity({ symmetric: true }) === undefined;
 		const connecting = find_connecting(hypo_state, giver, target, suitIndex, next_playable_rank, looksDirect, ignoreOrders);
 		if (connecting.length === 0) {
 			break;
@@ -56,7 +56,7 @@ function find_colour_focus(state, suitIndex, action) {
 		if (type === 'known' && card.newly_clued && card.possible.length > 1 && focused_card.inferred.some(c => c.matches(suitIndex, next_playable_rank))) {
 			// Trying to use a newly 'known' connecting card, but the focused card could be that
 			// e.g. If 2 reds are clued with only r5 remaining, the focus should not connect to the other card as r6
-			logger.debug(`blocked connection - focused card could be ${logCard({suitIndex, rank: next_playable_rank})}`);
+			logger.warn(`blocked connection - focused card could be ${logCard({suitIndex, rank: next_playable_rank})}`);
 			break;
 		}
 		else if (type === 'finesse') {
@@ -141,8 +141,8 @@ function find_rank_focus(state, rank, action) {
 			}
 
 			// Looks like a 2 save on any 2 not known to target
-			const save2 = rank === 2 &&
-				visibleFind(state, target, suitIndex, 2, { infer: [target, giver, state.ourPlayerIndex] }).filter(c => c.order !== focused_card.order).length === 0;
+			const find_opts = { infer: [target, giver, state.ourPlayerIndex], symmetric: [target, giver] };
+			const save2 = rank === 2 && visibleFind(state, target, suitIndex, 2, find_opts).filter(c => c.order !== focused_card.order).length === 0;
 
 			// Critical save or 2 save
 			if (isCritical(state, suitIndex, rank) || save2) {
@@ -162,6 +162,11 @@ function find_rank_focus(state, rank, action) {
 
 	// Play clue
 	for (let suitIndex = 0; suitIndex < state.suits.length; suitIndex++) {
+		// Critical cards can never be given a play clue
+		if (isCritical(state, suitIndex, rank)) {
+			continue;
+		}
+
 		let next_rank = state.play_stacks[suitIndex] + 1;
 
 		/** @type {Connection[]} */
@@ -177,21 +182,35 @@ function find_rank_focus(state, rank, action) {
 
 			let finesses = 0;
 
-			let looksPlayable = state.hypo_stacks.some(stack => stack + 1 === next_rank);
+			const looksPlayable = state.hypo_stacks.some(stack => stack + 1 === rank);
 			let ignoreOrders = already_connected.concat(state.next_ignore[next_rank - state.play_stacks[suitIndex] - 1] ?? []);
-			const looksDirect = focused_card.identity({ symmetric: true }) === undefined && (looksSave || looksPlayable);
+			let looksDirect = focused_card.identity({ symmetric: true }) === undefined && (looksSave || looksPlayable);
 			let connecting = find_connecting(hypo_state, giver, target, suitIndex, next_rank, looksDirect, ignoreOrders);
 
 			while (connecting.length !== 0) {
+				const { type, card } = connecting[0];
+
+				if (card.newly_clued && card.possible.length > 1 && focused_card.inferred.some(c => c.matches(suitIndex, next_rank))) {
+					// Trying to use a newly known/playable connecting card, but the focused card could be that
+					// e.g. If two 4s are clued (all other 4s visible), the other 4 should not connect and render this card with only one inference
+					logger.warn(`blocked connection - focused card could be ${logCard({suitIndex, rank: next_rank})}`);
+					break;
+				}
+
 				finesses += connecting.filter(conn => conn.type === 'finesse').length;
 				if (state.level === 1 && finesses === 2) {
 					logger.warn('blocked double finesse at level 1');
 					break;
 				}
 
-				if (connecting[0].type === 'finesse' && rank === next_rank) {
-					// Even if a finesse is possible, it might not be a finesse
-					focus_possible.push({ suitIndex, rank, save: false, connections: Utils.objClone(connections) });
+				if (type === 'finesse') {
+					// A finesse proves that this is not direct
+					looksDirect = focused_card.identity({ symmetric: true }) === undefined && looksSave;
+
+					if (rank === next_rank) {
+						// Even if a finesse is possible, it might not be a finesse
+						focus_possible.push({ suitIndex, rank, save: false, connections: Utils.objClone(connections) });
+					}
 				}
 
 				connections = connections.concat(connecting);
@@ -205,7 +224,6 @@ function find_rank_focus(state, rank, action) {
 					break;
 				}
 
-				looksPlayable = state.hypo_stacks.some(stack => stack + 1 === next_rank);
 				ignoreOrders = already_connected.concat(state.next_ignore[next_rank - state.play_stacks[suitIndex] - 1] ?? []);
 				connecting = find_connecting(hypo_state, giver, target, suitIndex, next_rank, looksDirect, ignoreOrders);
 			}
