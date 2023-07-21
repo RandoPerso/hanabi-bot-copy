@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 // @ts-ignore
 import { describe, it } from 'node:test';
 
-import { COLOUR, PLAYER, setup } from '../test-utils.js';
+import { COLOUR, PLAYER, expandShortCard, getRawInferences, setup } from '../test-utils.js';
 import HGroup from '../../src/conventions/h-group.js';
 import { ACTION, CLUE } from '../../src/constants.js';
 import * as Utils from '../../src/tools/util.js';
@@ -101,7 +101,7 @@ describe('trash chop move', () => {
 		], 4);
 
 		state.play_stacks = [5, 1, 0, 2, 2];
-		state.hypo_stacks = [5, 1, 0, 2, 2];
+		state.hypo_stacks = Array(2).fill([5, 1, 0, 2, 2]);
 
 		const { play_clues, save_clues, fix_clues } = find_clues(state);
 		const playable_priorities = determine_playable_card(state, state.hands[PLAYER.ALICE].find_playables());
@@ -171,7 +171,7 @@ describe('giving order chop move', () => {
 		], 4);
 
 		state.play_stacks = [2, 0, 0, 0, 0];
-		state.hypo_stacks = [2, 0, 0, 0, 0];
+		state.hypo_stacks = Array(2).fill([2, 0, 0, 0, 0]);
 
 		// Bob clues Alice 1, touching slots 3 and 4.
 		state.handle_action({ type: 'clue', clue: { type: CLUE.RANK, value: 1 }, giver: PLAYER.BOB, list: [1, 2], target: PLAYER.ALICE });
@@ -251,5 +251,39 @@ describe('interpreting order chop move', () => {
 
 		// Alice's slot 4 should be chop moved.
 		assert.equal(state.hands[PLAYER.ALICE][3].chop_moved, true);
+	});
+});
+
+describe('interpreting chop moves', () => {
+	it('will interpret new focus correctly', () => {
+		const state = setup(HGroup, [
+				['xx', 'xx', 'xx', 'xx', 'xx'],
+				['b4', 'b3', 'g3', 'r3', 'r5']
+			], 4);
+
+		// Alice's slots 4 and 5 are chop moved
+		[3, 4].forEach(index => state.hands[PLAYER.ALICE][index].chop_moved = true);
+
+		// Bob clues Alice purple, touching slots 2 and 5.
+		state.handle_action({ type: 'clue', clue: { type: CLUE.COLOUR, value: COLOUR.PURPLE }, giver: PLAYER.BOB, list: [0,3], target: PLAYER.ALICE });
+
+		// Alice's slot 2 should be p1.
+		assert.deepEqual(getRawInferences(state.hands[PLAYER.ALICE][1]), ['p1'].map(expandShortCard));
+	});
+
+	it('will interpret only touching cm cards correctly', () => {
+		const state = setup(HGroup, [
+				['xx', 'xx', 'xx', 'xx', 'xx'],
+				['b4', 'b3', 'g3', 'r3', 'r5']
+			], 4);
+
+		// Alice's slots 4 and 5 are chop moved
+		[3, 4].forEach(index => state.hands[PLAYER.ALICE][index].chop_moved = true);
+
+		// Bob clues Alice purple, touching slots 4 and 5.
+		state.handle_action({ type: 'clue', clue: { type: CLUE.COLOUR, value: COLOUR.PURPLE }, giver: PLAYER.BOB, list: [0,1], target: PLAYER.ALICE });
+
+		// Alice's slot 4 should be p1.
+		assert.deepEqual(getRawInferences(state.hands[PLAYER.ALICE][3]), ['p1'].map(expandShortCard));
 	});
 });

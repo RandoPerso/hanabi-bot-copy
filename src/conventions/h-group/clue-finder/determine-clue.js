@@ -1,8 +1,8 @@
 import { CLUE } from '../../../constants.js';
-import { card_value, clue_safe } from './clue-safe.js';
-import { determine_focus, find_chop, find_bad_touch } from '../hanabi-logic.js';
+import { clue_safe } from './clue-safe.js';
+import { determine_focus, find_bad_touch } from '../hanabi-logic.js';
 import { cardTouched, isCluable } from '../../../variants.js';
-import { isTrash } from '../../../basics/hanabi-util.js';
+import { cardValue, isTrash } from '../../../basics/hanabi-util.js';
 import { find_clue_value } from '../action-helper.js';
 import logger from '../../../tools/logger.js';
 import { logCard, logClue } from '../../../tools/log.js';
@@ -116,9 +116,10 @@ export function evaluate_clue(state, action, clue, target, target_card, bad_touc
  * @param  {State} state
  * @param  {State} hypo_state
  * @param  {Clue} clue
+ * @param  {number} giver
  * @param  {{touch?: Card[], list?: number[]}} provisions 	Provided 'touch' and 'list' variables if clued in our hand.
  */
-export function get_result(state, hypo_state, clue, provisions = {}) {
+export function get_result(state, hypo_state, clue, giver, provisions = {}) {
 	const { target } = clue;
 	const hand = state.hands[target];
 
@@ -166,7 +167,7 @@ export function get_result(state, hypo_state, clue, provisions = {}) {
 
 	// Count the number of finesses and newly known playable cards
 	for (let suitIndex = 0; suitIndex < state.suits.length; suitIndex++) {
-		for (let rank = state.hypo_stacks[suitIndex] + 1; rank <= hypo_state.hypo_stacks[suitIndex]; rank++) {
+		for (let rank = state.hypo_stacks[giver][suitIndex] + 1; rank <= hypo_state.hypo_stacks[giver][suitIndex]; rank++) {
 			// Find the card
 			let found = false;
 			for (let playerIndex = 0; playerIndex < state.numPlayers; playerIndex++) {
@@ -196,8 +197,8 @@ export function get_result(state, hypo_state, clue, provisions = {}) {
 		}
 	}
 
-	const new_chop = hypo_state.hands[target][find_chop(hypo_state.hands[target], { afterClue: true })];
-	const remainder = (new_chop !== undefined) ? card_value(hypo_state, new_chop) : 4;
+	const new_chop = hypo_state.hands[target].chop({ afterClue: true });
+	const remainder = (new_chop !== undefined) ? cardValue(hypo_state, new_chop) : 4;
 
 	return { elim, new_touched, bad_touch, trash, finesses, playables, remainder };
 }
@@ -242,7 +243,7 @@ export function determine_clue(state, target, target_card, options) {
 		}
 
 		const interpret = hypo_state.hands[target].find(c => c.order === target_card.order).inferred;
-		const { elim, new_touched, bad_touch, trash, finesses, playables, remainder } = get_result(state, hypo_state, clue);
+		const { elim, new_touched, bad_touch, trash, finesses, playables, remainder } = get_result(state, hypo_state, clue, state.ourPlayerIndex);
 
 		const result_log = {
 			clue: logClue(clue),
