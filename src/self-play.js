@@ -4,7 +4,7 @@ import { getHandSize } from './basics/helper.js';
 import HGroup from './conventions/h-group.js';
 import PlayfulSieve from './conventions/playful-sieve.js';
 import { ACTION, END_CONDITION, MAX_H_LEVEL } from './constants.js';
-import { cardCount, getVariant } from './variants.js';
+import { cardCount, getShortForms, getVariant } from './variants.js';
 import * as Utils from './tools/util.js';
 
 import logger from './tools/logger.js';
@@ -24,15 +24,10 @@ const conventions = /** @type {const} */ ({
 
 const playerNames = ['Alice', 'Bob', 'Cathy', 'Donald', 'Emily', 'Fred'];
 
-const noVar = /** @type {Variant} */ ({
-	"id": 0,
-	"name": "No Variant",
-	"suits": ["Red", "Yellow", "Green", "Blue", "Purple"]
-});
-
 async function main() {
 	const { convention = 'HGroup', level: lStr = '1', games = '10', players: pStr = '2', seed, variant: vStr = 'No Variant' } = Utils.parse_args();
 	const variant = await getVariant(vStr);
+	await getShortForms(variant);
 
 	if (conventions[convention] === undefined)
 		throw new Error(`Convention ${convention} is not supported.`);
@@ -68,7 +63,7 @@ async function main() {
 		const shuffled = shuffle(deck, seed);
 
 		const { score, strikeout, actions } =
-			simulate_game(players, shuffled, /** @type {keyof typeof conventions} */ (convention), level);
+			simulate_game(players, shuffled, /** @type {keyof typeof conventions} */ (convention), level, variant);
 
 		fs.writeFileSync(`seeds/${seed}.json`, JSON.stringify({ players, deck: shuffled, actions }));
 		console.log(score, 'strikeout?', strikeout);
@@ -78,7 +73,7 @@ async function main() {
 			const players = playerNames.slice(0, numPlayers);
 			const shuffled = shuffle(deck, `${i}`);
 			const { score, strikeout, actions } =
-				simulate_game(players, shuffled, /** @type {keyof typeof conventions} */ (convention), level);
+				simulate_game(players, shuffled, /** @type {keyof typeof conventions} */ (convention), level, variant);
 
 			fs.writeFileSync(`seeds/${i}.json`, JSON.stringify({ players, deck: shuffled, actions }));
 
@@ -94,9 +89,10 @@ async function main() {
  * @param {Identity[]} deck
  * @param {keyof typeof conventions} convention
  * @param {number} level
+ * @param {Variant} variant
  */
-function simulate_game(playerNames, deck, convention, level) {
-	const states = playerNames.map((_, index) => ({ state: new conventions[convention](-1, playerNames, index, noVar, {}, false, level), order: 0 }));
+function simulate_game(playerNames, deck, convention, level, variant) {
+	const states = playerNames.map((_, index) => ({ state: new conventions[convention](-1, playerNames, index, variant, {}, false, level), order: 0 }));
 	Utils.globalModify({ state: states[0].state });
 
 	for (let stateIndex = 0; stateIndex < playerNames.length; stateIndex++) {
