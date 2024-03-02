@@ -87,8 +87,9 @@
  * @property {Identity[]} identities
  * @property {boolean} [self]
  * @property {boolean} [hidden]
- * @property {boolean} [known]
- * @property {boolean} [certainFinesse]
+ * @property {ActualCard[]} [linked]
+ * @property {boolean} [certain]
+ * @property {boolean} [ambiguous]
  * 
  * @typedef FocusPossibility
  * @property {number} suitIndex
