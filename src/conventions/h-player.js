@@ -4,6 +4,7 @@ import { cardValue } from '../basics/hanabi-util.js';
 import { CLUE } from '../constants.js';
 
 import * as Utils from '../tools/util.js';
+import { variantRegexes } from '../variants.js';
 
 /**
  * @typedef {import('../basics/Card.js').Card} Card
@@ -84,7 +85,7 @@ export class HGroup_Player extends Player {
 				possible.length > 1 && possible.some(p => p.matches(identity)) &&		// not known, but could match
 				(inferred.length > 1 || !inferred[0]?.matches(identity)) &&				// not inferred, or at least the inference doesn't match
 				clues.some(clue =>														// at least one clue matches
-					(clue.type === CLUE.COLOUR && (clue.value === suitIndex || ['Rainbow', 'Omni'].includes(suits[suitIndex]))) ||
+					(clue.type === CLUE.COLOUR && (clue.value === suitIndex || suits[suitIndex].match(variantRegexes.rainbowish))) ||
 					(clue.type === CLUE.RANK && clue.value === rank));
 		});
 	}
