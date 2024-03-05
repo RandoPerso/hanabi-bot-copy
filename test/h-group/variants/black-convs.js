@@ -39,7 +39,7 @@ describe('save clue interpretation', () => {
 			variant: {'id': 21, 'name': 'Black (5 Suits)', 'suits': ['Red', 'Yellow', 'Green', 'Blue', 'Black']}
 		});
 
-		[1].forEach(index => state.hands[PLAYER.ALICE][index].clued = true);
+		state.hands[PLAYER.ALICE][1].clued = true;
 
 		takeTurn(state, 'Bob clues black to Alice (slot 1,5)');
 

@@ -45,6 +45,7 @@ const noVar = /** @type {Variant} */ ({
  * @param {string} short
  */
 export function expandShortCard(short) {
+	// TODO: Make this compatible with variants
 	return {
 		suitIndex: ['x', 'r', 'y', 'g', 'b', 'p'].indexOf(short[0]) - 1,
 		rank: Number(short[1]) || -1
