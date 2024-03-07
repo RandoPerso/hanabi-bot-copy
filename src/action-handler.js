@@ -3,6 +3,8 @@ import logger from './tools/logger.js';
 import { logAction, logCard, logPerformAction } from './tools/log.js';
 import * as Utils from './tools/util.js';
 import { team_elim } from './basics/helper.js';
+import { variantRegexes } from './variants.js';
+import { CLUE } from './constants.js';
 
 /**
  * @typedef {import('./types.js').Action} Action
@@ -28,6 +30,8 @@ export function handle_action(action, catchup = false) {
 		case 'clue': {
 			// {type: 'clue', clue: { type: 1, value: 1 }, giver: 0, list: [ 8, 9 ], target: 1, turn: 0}
 			const { giver, target, list } = action;
+			if (!catchup && action.clue.type === CLUE.COLOUR)
+				action.clue.value = this.variant.suits.indexOf(Array.from(this.variant.suits.filter(s => !s.match(variantRegexes.noColour)))[action.clue.value]);
 			logger.highlight('yellowb', `Turn ${this.turn_count}: ${logAction(action)}`);
 
 			this.interpret_clue(this, action);

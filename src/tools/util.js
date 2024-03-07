@@ -2,6 +2,7 @@ import { BasicCard, ActualCard } from '../basics/Card.js';
 import { Hand } from '../basics/Hand.js';
 import { Player } from '../basics/Player.js';
 import { ACTION, CLUE } from '../constants.js';
+import { variantRegexes } from '../variants.js';
 import logger from './logger.js';
 
 /**
@@ -11,6 +12,7 @@ import logger from './logger.js';
  * @typedef {import('../types.js').Clue} Clue
  * @typedef {import('../types.js').Action} Action
  * @typedef {import('../types.js').PerformAction} PerformAction
+ * @typedef {import('../variants.js').Variant} Variant
  */
 
 export const globals = {};
@@ -214,12 +216,17 @@ export function objEquals(obj1, obj2) {
 /**
  * Transforms a CLUE into an ACTION.
  * @param  {Clue} clue
+ * @param  {Variant} variant
  * @param  {number} tableID
  * @returns {PerformAction}
  */
-export function clueToAction(clue, tableID) {
+export function clueToAction(clue, variant, tableID) {
 	const { type, value, target } = clue;
-	return { tableID, type: /** @type {ACTION[keyof ACTION]} */ (type + 2), value, target };
+	const colouredSuits = Array.from(variant.suits.filter(s => !s.match(variantRegexes.noColour)));
+	let newValue = value;
+	if (clue.type === CLUE.COLOUR)
+		newValue = colouredSuits.indexOf(variant.suits[value]);
+	return { tableID, type: /** @type {ACTION[keyof ACTION]} */ (type + 2), value: newValue, target };
 }
 
 /**

@@ -162,7 +162,7 @@ export function take_action(state) {
 		({ clue: best_play_clue, clue_value } = select_play_clue(all_play_clues));
 
 		if (best_play_clue?.result.finesses > 0)
-			return Utils.clueToAction(best_play_clue, tableID);
+			return Utils.clueToAction(best_play_clue, state.variant, tableID);
 	}
 
 	// Sarcastic discard to someone else
@@ -215,7 +215,7 @@ export function take_action(state) {
 
 			if (new_chop_value === 0) {
 				logger.highlight('yellow', `performing tccm on ${logCard(chop)}`);
-				return Utils.clueToAction(clue, tableID);
+				return Utils.clueToAction(clue, state.variant, tableID);
 			}
 		}
 	}
@@ -235,7 +235,7 @@ export function take_action(state) {
 	// Play clue in 2 players while partner is not loaded and not selfish
 	if (state.numPlayers === 2 && state.clue_tokens > 0 && play_clue_2p &&
 		!state.me.thinksLoaded(state, nextPlayerIndex) && not_selfish(play_clue_2p))
-		return Utils.clueToAction(play_clue_2p, tableID);
+		return Utils.clueToAction(play_clue_2p, state.variant, tableID);
 
 	// Playable card with any priority
 	if (best_playable_card !== undefined)
@@ -246,7 +246,7 @@ export function take_action(state) {
 			// Give play clue (at correct priority level)
 			if (i === (state.clue_tokens > 1 ? actionPrioritySize + 1 : actionPrioritySize * 2) && best_play_clue !== undefined) {
 				if (clue_value >= minimum_clue_value(state)) {
-					return Utils.clueToAction(best_play_clue, tableID);
+					return Utils.clueToAction(best_play_clue, state.variant, tableID);
 				}
 				else {
 					logger.info('clue too low value', logClue(best_play_clue), clue_value);
@@ -262,7 +262,7 @@ export function take_action(state) {
 
 	// Any play clue in 2 players
 	if (state.numPlayers === 2 && state.clue_tokens > 0 && (best_play_clue || stall_clues[1].length > 0))
-		return Utils.clueToAction(best_play_clue ?? Utils.maxOn(stall_clues[1], clue => find_clue_value(clue.result)), tableID);
+		return Utils.clueToAction(best_play_clue ?? Utils.maxOn(stall_clues[1], clue => find_clue_value(clue.result)), state.variant, tableID);
 
 	// Either there are no clue tokens or the best play clue doesn't meet MCVP
 
@@ -283,12 +283,12 @@ export function take_action(state) {
 
 		// 8 clues, must stall
 		if (state.clue_tokens === 8) {
-			return validStall ? Utils.clueToAction(validStall, tableID) :
+			return validStall ? Utils.clueToAction(validStall, state.variant, tableID) :
 				{ type: ACTION.RANK, value: state.hands[nextPlayerIndex].at(-1).rank, target: nextPlayerIndex, tableID };
 		}
 
 		if (validStall)
-			return Utils.clueToAction(validStall, tableID);
+			return Utils.clueToAction(validStall, state.variant, tableID);
 	}
 
 	// Discarding known trash is still preferable to chop

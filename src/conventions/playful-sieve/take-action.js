@@ -89,10 +89,10 @@ export function take_action(state) {
 
 		// Chop is delayed playable
 		if (!isTrash(state, state.me, chop, chop.order) && state.me.hypo_stacks[chop.suitIndex] + 1 === chop.rank)
-			return Utils.clueToAction({ type: CLUE.COLOUR, value: chop.suitIndex, target: partner }, tableID);
+			return Utils.clueToAction({ type: CLUE.COLOUR, value: chop.suitIndex, target: partner }, state.variant, tableID);
 
 		if (fix_clue !== undefined)
-			return Utils.clueToAction(fix_clue, tableID);
+			return Utils.clueToAction(fix_clue, state.variant, tableID);
 
 		// Can't give colour clues touching chop
 		const valid_clues = all_valid_clues(state, partner).filter(clue =>
@@ -101,13 +101,13 @@ export function take_action(state) {
 		const best_clue = Utils.maxOn(valid_clues, (clue) => clue_value(state, clue), 0);
 
 		if (best_clue !== undefined)
-			return Utils.clueToAction(best_clue, tableID);
+			return Utils.clueToAction(best_clue, state.variant, tableID);
 		else
 			return locked_discard_action;
 	}
 
 	if (fix_clue !== undefined && state.clue_tokens > 0)
-		return Utils.clueToAction(fix_clue, tableID);
+		return Utils.clueToAction(fix_clue, state.variant, tableID);
 
 	logger.info('fix clue?', fix_clue ? logClue(fix_clue) : undefined);
 
@@ -255,13 +255,13 @@ export function take_action(state) {
 
 	// 1 playable + 1 new_touched + 1 elim is enough
 	if (best_clue_value >= 2)
-		return Utils.clueToAction(best_clue, tableID);
+		return Utils.clueToAction(best_clue, state.variant, tableID);
 
 	// Best clue is too low value, lock
 	if (best_clue_value <= 0.25 && lock_clue !== undefined)
-		return Utils.clueToAction(lock_clue, tableID);
+		return Utils.clueToAction(lock_clue, state.variant, tableID);
 
-	return Utils.clueToAction(best_clue, tableID);
+	return Utils.clueToAction(best_clue, state.variant, tableID);
 }
 
 /**

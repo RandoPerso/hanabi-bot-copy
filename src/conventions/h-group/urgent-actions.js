@@ -120,7 +120,7 @@ function find_play_over_save(state, target, all_play_clues, locked, remainder_bo
 	const { clue } = Utils.maxOn(play_clues, ({ clue }) => find_clue_value(clue.result));
 
 	// Convert CLUE to ACTION
-	return Utils.clueToAction(clue, state.tableID);
+	return Utils.clueToAction(clue, state.variant, state.tableID);
 }
 
 /**
@@ -171,7 +171,7 @@ export function find_urgent_actions(state, play_clues, save_clues, fix_clues, st
 			const trash_fixes = fix_clues[target].filter(clue => clue.trash);
 			if (trash_fixes.length > 0) {
 				const trash_fix = Utils.maxOn(trash_fixes, ({ result }) => find_clue_value(result));
-				urgent_actions[PRIORITY.TRASH_FIX + nextPriority].push(Utils.clueToAction(trash_fix, state.tableID));
+				urgent_actions[PRIORITY.TRASH_FIX + nextPriority].push(Utils.clueToAction(trash_fix, state.variant, state.tableID));
 				continue;
 			}
 			continue;
@@ -188,7 +188,7 @@ export function find_urgent_actions(state, play_clues, save_clues, fix_clues, st
 
 			// They already have a playable or trash (i.e. early save)
 			if (common.thinksLoaded(state, target)) {
-				urgent_actions[prioritySize * 2].push(Utils.clueToAction(save, state.tableID));
+				urgent_actions[prioritySize * 2].push(Utils.clueToAction(save, state.variant, state.tableID));
 				continue;
 			}
 
@@ -207,7 +207,7 @@ export function find_urgent_actions(state, play_clues, save_clues, fix_clues, st
 			const trash_fixes = fix_clues[target].filter(clue => clue.trash);
 			if (trash_fixes.length > 0) {
 				const trash_fix = Utils.maxOn(trash_fixes, ({ result }) => find_clue_value(result));
-				urgent_actions[PRIORITY.TRASH_FIX + nextPriority].push(Utils.clueToAction(trash_fix, state.tableID));
+				urgent_actions[PRIORITY.TRASH_FIX + nextPriority].push(Utils.clueToAction(trash_fix, state.variant, state.tableID));
 				continue;
 			}
 
@@ -247,7 +247,7 @@ export function find_urgent_actions(state, play_clues, save_clues, fix_clues, st
 					const { tempo, valuable } = valuable_tempo_clue(state, state.common, clue, playables, focused_card);
 
 					if (tempo && !valuable && clue_safe(state, state.me, clue)) {
-						urgent_actions[PRIORITY.ONLY_SAVE + nextPriority].push(Utils.clueToAction(clue, state.tableID));
+						urgent_actions[PRIORITY.ONLY_SAVE + nextPriority].push(Utils.clueToAction(clue, state.variant, state.tableID));
 						tccm = true;
 						break;
 					}
@@ -290,7 +290,7 @@ export function find_urgent_actions(state, play_clues, save_clues, fix_clues, st
 				continue;
 
 			// No alternative, have to give save
-			urgent_actions[PRIORITY.ONLY_SAVE + nextPriority].push(Utils.clueToAction(save_clues[target], state.tableID));
+			urgent_actions[PRIORITY.ONLY_SAVE + nextPriority].push(Utils.clueToAction(save_clues[target], state.variant, state.tableID));
 		}
 
 		// They require a fix clue
@@ -300,14 +300,14 @@ export function find_urgent_actions(state, play_clues, save_clues, fix_clues, st
 			// Urgent fix on the next player is particularly urgent, but we should prioritize urgent fixes for others too
 			if (urgent_fixes.length > 0) {
 				const urgent_fix = Utils.maxOn(urgent_fixes, ({ result }) => find_clue_value(result));
-				urgent_actions[PRIORITY.URGENT_FIX + nextPriority].push(Utils.clueToAction(urgent_fix, state.tableID));
+				urgent_actions[PRIORITY.URGENT_FIX + nextPriority].push(Utils.clueToAction(urgent_fix, state.variant, state.tableID));
 				continue;
 			}
 
 			const best_fix = Utils.maxOn(fix_clues[target], ({ result }) => find_clue_value(result));
 
 			// No urgent fixes required
-			urgent_actions[PRIORITY.URGENT_FIX + prioritySize].push(Utils.clueToAction(best_fix, state.tableID));
+			urgent_actions[PRIORITY.URGENT_FIX + prioritySize].push(Utils.clueToAction(best_fix, state.variant, state.tableID));
 		}
 	}
 	return urgent_actions;

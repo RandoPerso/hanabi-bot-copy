@@ -59,13 +59,16 @@ function apply_locked_discard(state, playerIndex) {
 	const other = (playerIndex + 1) % state.numPlayers;
 
 	logger.highlight('cyan', `sacrifice discard, locking ${state.playerNames[other]}`);
+	logger.error('NOT LOCKING ANYTHING!!!!');
 
+	/*
 	// Chop move all cards
 	for (const { order } of state.hands[other]) {
 		const card = state.common.thoughts[order];
 		if (!card.clued && !card.finessed && !card.chop_moved)
 			card.chop_moved = true;
 	}
+	*/
 }
 
 /**
