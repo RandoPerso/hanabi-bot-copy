@@ -104,7 +104,7 @@ export async function getVariant(name) {
 export let shortForms = /** @type {string[]} */ (['r', 'y', 'g', 'b', 'p']);
 
 /**
- * Edits shortForms to have the correct acryonyms.
+ * Edits shortForms to have the correct acronyms.
  * @param {Variant} variant
  */
 export async function getShortForms(variant) {
@@ -126,7 +126,7 @@ export async function getShortForms(variant) {
 }
 
 /**
- * Sets shortForms to contain the specified acryonyms.
+ * Sets shortForms to contain the specified acronyms.
  * @param {string[]} abbreviations
  */
 export function setShortForms(abbreviations) {
@@ -154,6 +154,9 @@ export function cardTouched(card, variant, clue) {
 	if (type === CLUE.COLOUR) {
 		if (suitIndex === -1 || variantRegexes.whitish.test(suit))
 			return false;
+
+		if (suit.endsWith(' MD'))
+			return value <= suitIndex;
 
 		if (variantRegexes.rainbowish.test(suit))
 			return true;
