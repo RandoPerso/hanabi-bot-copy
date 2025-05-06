@@ -3,7 +3,7 @@ import { CLUE_INTERP } from '../h-constants.js';
 import { getIgnoreOrders } from '../../../basics/hanabi-util.js';
 import { rankLooksPlayable } from '../hanabi-logic.js';
 import { find_connecting } from './connecting-cards.js';
-import { cardTouched, colourableSuits, variantRegexes } from '../../../variants.js';
+import { cardTouched, colourableSuits, dualColourClueTouchColours, variantRegexes } from '../../../variants.js';
 import { finalize_connections } from './interpret-clue.js';
 import * as Utils from '../../../tools/util.js';
 
@@ -381,7 +381,7 @@ export function find_focus_possible(game, action, focusResult, thinks_stall) {
 	const focus_possible = clue.type === CLUE.COLOUR ?
 		state.variant.suits
 			.filter(s => Utils.combineRegex(variantRegexes.rainbowish, variantRegexes.prism).test(s))
-			.concat(colourableSuits(state.variant)[clue.value])
+			.concat(variantRegexes.dualColour.test(colourableSuits(state.variant)[clue.value]) ? dualColourClueTouchColours(state.variant, clue.value).map(c => colourableSuits(state.variant)[c]) : colourableSuits(state.variant)[clue.value])
 			.flatMap(s => find_colour_focus(game, state.variant.suits.indexOf(s), action, focusResult, thinks_stall)) :
 		find_rank_focus(game, clue.value, action, focusResult, thinks_stall);
 

@@ -33,8 +33,9 @@ const brownish = /Brown|Muddy|Cocoa|Null/;
 const pinkish = /Pink|Omni/;
 const dark = /Black|Dark|Gray|Cocoa/;
 const prism = /Prism/;
+const dualColour = / D2?$/;
 const noColour = combineRegex(whitish, rainbowish, prism);
-export const variantRegexes = {whitish, rainbowish, brownish, pinkish, dark, prism, noColour};
+export const variantRegexes = {whitish, rainbowish, brownish, pinkish, dark, prism, noColour, dualColour};
 
 /** @type {Promise<Variant[]>} */
 const variants_promise = new Promise((resolve, reject) => {
@@ -139,6 +140,48 @@ export function colourableSuits(variant) {
 }
 
 /**
+ * Returns the clue values that touch the given dual colour suit.
+ * @param {Variant} variant 
+ * @param {number} suitIndex 
+ * @returns {number[]}
+ */
+export function dualColourSuitColours(variant, suitIndex) {
+	// TODO: Add RGB Mix exception.
+	const dualColorNum = variant.suits.filter(c => variantRegexes.dualColour.test(c)).length;
+	switch (dualColorNum) {
+		case 3:
+			return [[0, 1], [0, 2], [1, 2]][suitIndex];
+		case 4:
+			throw new RangeError("Invalid number of dual-colour suits detected!");
+		case 5:
+			return [suitIndex, (suitIndex + 1) % 5];
+		case 6:
+			return [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]][suitIndex];
+	}
+}
+
+/**
+ * Returns the dual colour suits that are touched by the given clue value.
+ * @param {Variant} variant 
+ * @param {number} value 
+ * @returns {number[]}
+ */
+export function dualColourClueTouchColours(variant, value) {
+	// TODO: Add RGB Mix exception.
+	const dualColorNum = variant.suits.filter(c => variantRegexes.dualColour.test(c)).length;
+	switch (dualColorNum) {
+		case 3:
+			return [[0, 1], [0, 2], [1, 2]][value];
+		case 4:
+			throw new RangeError("Invalid number of dual-colour suits detected!");
+		case 5:
+			return [(value - 1) % 5, value];
+		case 6:
+			return [[0, 1, 2], [0, 3, 4], [1, 3, 5], [2, 4, 5]][value];
+	}
+}
+
+/**
  * Returns whether the card would be touched by the clue.
  * @param {Identity} card
  * @param {Variant} variant
@@ -157,6 +200,9 @@ export function cardTouched(card, variant, clue) {
 
 		if (suit.endsWith(' MD'))
 			return value <= suitIndex;
+
+		if (variantRegexes.dualColour.test(suit))
+			return dualColourSuitColours(variant, suitIndex).includes(value);
 
 		if (variantRegexes.rainbowish.test(suit))
 			return true;
